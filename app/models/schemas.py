@@ -51,6 +51,15 @@ class UserResponse(BaseModel):
     email: str
 
 
+class OTPSendRequest(BaseModel):
+    email: EmailStr
+
+
+class OTPVerifyRequest(BaseModel):
+    email: EmailStr
+    token: str = Field(min_length=6, max_length=6)
+
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
