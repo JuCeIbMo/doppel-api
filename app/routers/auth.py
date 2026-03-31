@@ -123,7 +123,10 @@ async def send_otp(request: Request, data: OTPSendRequest):
     _check_otp_rate_limits(data.email, ip)
 
     try:
-        get_supabase().auth.sign_in_with_otp({"email": data.email})
+        get_supabase().auth.sign_in_with_otp({
+            "email": data.email,
+            "options": {"should_create_user": True},
+        })
     except Exception:
         logger.exception("OTP send failed for %s", data.email)
 
