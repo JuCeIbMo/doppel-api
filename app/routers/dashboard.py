@@ -14,7 +14,7 @@ from app.models.schemas import (
 from app.services.supabase_client import get_supabase
 
 logger = logging.getLogger("doppel.dashboard")
-router = APIRouter(prefix="/me")
+router = APIRouter(prefix="/me", tags=["Dashboard"])
 
 
 @router.get("/tenant", response_model=TenantResponse)

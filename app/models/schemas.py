@@ -24,26 +24,11 @@ class HealthResponse(BaseModel):
 
 # Auth
 
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=8)
-
-
-class RegisterResponse(BaseModel):
-    success: bool
-    user_id: str
-    message: str
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    refresh_token: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -60,13 +45,8 @@ class OTPVerifyRequest(BaseModel):
     token: str = Field(min_length=6, max_length=6)
 
 
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
-class ResetPasswordRequest(BaseModel):
-    access_token: str
-    new_password: str = Field(min_length=8)
+class TokenRefreshRequest(BaseModel):
+    refresh_token: str
 
 
 # Dashboard
@@ -98,10 +78,10 @@ class BotConfigResponse(BaseModel):
 
 
 class BotConfigUpdateRequest(BaseModel):
-    system_prompt: str | None = None
-    welcome_message: str | None = None
-    language: str | None = None
-    ai_model: str | None = None
+    system_prompt: str | None = Field(None, max_length=4000)
+    welcome_message: str | None = Field(None, max_length=500)
+    language: str | None = Field(None, max_length=10)
+    ai_model: str | None = Field(None, max_length=50)
 
 
 class MessageResponse(BaseModel):

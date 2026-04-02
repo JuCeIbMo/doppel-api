@@ -11,7 +11,7 @@ from app.services import ai_bot, meta_api
 from app.services.supabase_client import get_supabase
 
 logger = logging.getLogger("doppel.webhook")
-router = APIRouter()
+router = APIRouter(tags=["Webhook"])
 
 
 @router.get("/webhook/whatsapp")

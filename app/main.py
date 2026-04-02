@@ -24,14 +24,19 @@ async def lifespan(app: FastAPI):
     logger.info("doppel-api stopped")
 
 
-app = FastAPI(title="Doppel API", lifespan=lifespan)
+app = FastAPI(
+    title="Doppel API",
+    version="1.0.0",
+    description="WhatsApp Business automation API. Auth via OTP, Meta Embedded Signup, and tenant dashboard.",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(health.router)

@@ -11,7 +11,7 @@ from app.services import meta_api
 from app.services.supabase_client import get_supabase
 
 logger = logging.getLogger("doppel.oauth")
-router = APIRouter()
+router = APIRouter(tags=["OAuth"])
 
 
 @router.post("/oauth/exchange", response_model=OAuthExchangeResponse)
