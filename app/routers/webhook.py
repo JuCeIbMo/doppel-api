@@ -67,6 +67,19 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
                 # Save each inbound message and schedule bot response
                 for msg in messages:
+                    wa_message_id = msg.get("id")
+                    if wa_message_id:
+                        existing_message = (
+                            supabase.table("messages")
+                            .select("id")
+                            .eq("wa_message_id", wa_message_id)
+                            .limit(1)
+                            .execute()
+                        )
+                        if existing_message.data:
+                            logger.info("Skipping duplicate webhook message_id=%s", wa_message_id)
+                            continue
+
                     msg_type = msg.get("type", "text")
                     content = None
                     if msg_type == "text":
@@ -79,7 +92,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                         "direction": "inbound",
                         "content": content,
                         "message_type": msg_type,
-                        "wa_message_id": msg.get("id"),
+                        "wa_message_id": wa_message_id,
                     }).execute()
 
                     logger.info(
@@ -119,7 +132,7 @@ async def _process_bot_response(
         # Get bot config
         config_result = (
             supabase.table("bot_configs")
-            .select("system_prompt, ai_model")
+            .select("system_prompt, ai_model, bot_enabled")
             .eq("tenant_id", tenant_id)
             .single()
             .execute()
@@ -129,12 +142,16 @@ async def _process_bot_response(
             return
 
         config = config_result.data
+        if not config.get("bot_enabled", True):
+            logger.info("Bot disabled for tenant_id=%s", tenant_id)
+            return
 
         # Get WhatsApp account (need phone_number_id and encrypted token)
         wa_result = (
             supabase.table("whatsapp_accounts")
             .select("phone_number_id, access_token_encrypted")
             .eq("id", wa_account_id)
+            .eq("status", "connected")
             .single()
             .execute()
         )

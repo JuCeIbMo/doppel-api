@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Anthropic — leave empty to disable AI bot responses
     ANTHROPIC_API_KEY: str = ""
     AI_CONTEXT_MESSAGES: int = 20
+    META_API_RETRIES: int = 3
+    META_API_RETRY_DELAY_MS: int = 300
+    ANTHROPIC_API_RETRIES: int = 2
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

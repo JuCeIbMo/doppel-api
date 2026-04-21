@@ -1,4 +1,45 @@
+import asyncio
+
 import httpx
+
+from app.config import settings
+
+
+def _should_retry(exc: httpx.HTTPError | None = None, response: httpx.Response | None = None) -> bool:
+    if exc is not None:
+        return isinstance(exc, (httpx.TimeoutException, httpx.NetworkError))
+    if response is not None:
+        return response.status_code >= 500 or response.status_code == 429
+    return False
+
+
+async def _request_with_retry(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    retryable: bool = True,
+    **kwargs,
+) -> httpx.Response:
+    last_exc: httpx.HTTPError | None = None
+
+    for attempt in range(settings.META_API_RETRIES):
+        try:
+            response = await client.request(method, url, **kwargs)
+            if retryable and _should_retry(response=response) and attempt < settings.META_API_RETRIES - 1:
+                await asyncio.sleep(settings.META_API_RETRY_DELAY_MS / 1000)
+                continue
+            response.raise_for_status()
+            return response
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            if not retryable or not _should_retry(exc=exc) or attempt == settings.META_API_RETRIES - 1:
+                raise
+            await asyncio.sleep(settings.META_API_RETRY_DELAY_MS / 1000)
+
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("Meta API request failed without a response")
 
 
 async def exchange_code_for_token(
@@ -9,11 +50,13 @@ async def exchange_code_for_token(
     api_version: str,
 ) -> str:
     """Exchange OAuth authorization code for an access token."""
-    response = await client.get(
+    response = await _request_with_retry(
+        client,
+        "GET",
         f"https://graph.facebook.com/{api_version}/oauth/access_token",
+        retryable=False,
         params={"client_id": app_id, "client_secret": app_secret, "code": code},
     )
-    response.raise_for_status()
     return response.json()["access_token"]
 
 
@@ -24,11 +67,12 @@ async def get_waba_details(
     api_version: str,
 ) -> dict:
     """Fetch WABA details (business name, etc.)."""
-    response = await client.get(
+    response = await _request_with_retry(
+        client,
+        "GET",
         f"https://graph.facebook.com/{api_version}/{waba_id}",
         params={"fields": "name,currency,timezone_id", "access_token": token},
     )
-    response.raise_for_status()
     return response.json()
 
 
@@ -40,12 +84,13 @@ async def register_phone_number(
     api_version: str,
 ) -> None:
     """Register a phone number for WhatsApp Cloud API."""
-    response = await client.post(
+    await _request_with_retry(
+        client,
+        "POST",
         f"https://graph.facebook.com/{api_version}/{phone_number_id}/register",
         headers={"Authorization": f"Bearer {token}"},
         json={"messaging_product": "whatsapp", "pin": pin},
     )
-    response.raise_for_status()
 
 
 async def subscribe_app_to_waba(
@@ -55,11 +100,62 @@ async def subscribe_app_to_waba(
     api_version: str,
 ) -> None:
     """Subscribe the app to a WABA to receive webhook events."""
-    response = await client.post(
+    await _request_with_retry(
+        client,
+        "POST",
         f"https://graph.facebook.com/{api_version}/{waba_id}/subscribed_apps",
         headers={"Authorization": f"Bearer {token}"},
     )
-    response.raise_for_status()
+
+
+async def get_waba_phone_numbers(
+    client: httpx.AsyncClient,
+    waba_id: str,
+    token: str,
+    api_version: str,
+) -> list[dict]:
+    """Return phone number objects associated with a WABA (for coexistence onboarding)."""
+    response = await _request_with_retry(
+        client,
+        "GET",
+        f"https://graph.facebook.com/{api_version}/{waba_id}/phone_numbers",
+        params={"access_token": token},
+    )
+    return response.json().get("data", [])
+
+
+async def subscribe_coexistence_fields(
+    client: httpx.AsyncClient,
+    waba_id: str,
+    token: str,
+    api_version: str,
+) -> None:
+    """Subscribe extra webhook fields required for coexistence mode."""
+    for field in ("history", "smb_app_state_sync", "smb_message_echoes"):
+        await _request_with_retry(
+            client,
+            "POST",
+            f"https://graph.facebook.com/{api_version}/{waba_id}/subscribed_apps",
+            headers={"Authorization": f"Bearer {token}"},
+            params={"subscribed_fields": field},
+        )
+
+
+async def trigger_smb_sync(
+    client: httpx.AsyncClient,
+    phone_number_id: str,
+    token: str,
+    sync_type: str,
+    api_version: str,
+) -> None:
+    """Trigger contact or history sync for a coexistence number. Must run within 24hs of onboarding."""
+    await _request_with_retry(
+        client,
+        "POST",
+        f"https://graph.facebook.com/{api_version}/{phone_number_id}/smb_app_data",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"messaging_product": "whatsapp", "sync_type": sync_type},
+    )
 
 
 async def send_whatsapp_message(
@@ -71,7 +167,9 @@ async def send_whatsapp_message(
     api_version: str,
 ) -> str:
     """Send a text message via WhatsApp Cloud API. Returns Meta's message ID."""
-    response = await client.post(
+    response = await _request_with_retry(
+        client,
+        "POST",
         f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages",
         headers={"Authorization": f"Bearer {token}"},
         json={
@@ -81,5 +179,4 @@ async def send_whatsapp_message(
             "text": {"body": text},
         },
     )
-    response.raise_for_status()
     return response.json()["messages"][0]["id"]

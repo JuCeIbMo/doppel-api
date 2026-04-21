@@ -6,13 +6,16 @@ from pydantic import BaseModel, EmailStr, Field
 class OAuthExchangeRequest(BaseModel):
     code: str
     waba_id: str
-    phone_number_id: str
+    phone_number_id: str | None = None
+    is_coexistence: bool = False
 
 
 class OAuthExchangeResponse(BaseModel):
     success: bool
     tenant_id: str
     message: str
+    display_phone: str | None = None
+    business_name: str | None = None
 
 
 # Health
@@ -75,6 +78,7 @@ class BotConfigResponse(BaseModel):
     welcome_message: str
     language: str
     ai_model: str
+    bot_enabled: bool
 
 
 class BotConfigUpdateRequest(BaseModel):
@@ -82,6 +86,7 @@ class BotConfigUpdateRequest(BaseModel):
     welcome_message: str | None = Field(None, max_length=500)
     language: str | None = Field(None, max_length=10)
     ai_model: str | None = Field(None, max_length=50)
+    bot_enabled: bool | None = None
 
 
 class MessageResponse(BaseModel):
@@ -98,3 +103,8 @@ class PaginatedMessages(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class DeleteAccountResponse(BaseModel):
+    success: bool
+    message: str

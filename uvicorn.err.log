@@ -1,0 +1,8 @@
+INFO:     Started server process [3256]
+INFO:     Waiting for application startup.
+2026-04-21 04:04:37,234 INFO doppel doppel-api started
+INFO:     Application startup complete.
+ERROR:    [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8000): [winerror 10048] solo se permite un uso de cada dirección de socket (protocolo/dirección de red/puerto)
+INFO:     Waiting for application shutdown.
+2026-04-21 04:04:37,251 INFO doppel doppel-api stopped
+INFO:     Application shutdown complete.

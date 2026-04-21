@@ -6,6 +6,7 @@ from app.dependencies import get_current_tenant
 from app.models.schemas import (
     BotConfigResponse,
     BotConfigUpdateRequest,
+    DeleteAccountResponse,
     MessageResponse,
     PaginatedMessages,
     TenantResponse,
@@ -39,7 +40,7 @@ async def get_bot_config(tenant: dict = Depends(get_current_tenant)):
     result = (
         get_supabase()
         .table("bot_configs")
-        .select("id, system_prompt, welcome_message, language, ai_model")
+        .select("id, system_prompt, welcome_message, language, ai_model, bot_enabled")
         .eq("tenant_id", tenant["id"])
         .single()
         .execute()
@@ -63,7 +64,7 @@ async def update_bot_config(
         supabase.table("bot_configs")
         .update(update_data)
         .eq("tenant_id", tenant["id"])
-        .select("id, system_prompt, welcome_message, language, ai_model")
+        .select("id, system_prompt, welcome_message, language, ai_model, bot_enabled")
         .execute()
     )
     if not result.data:
@@ -117,7 +118,29 @@ async def disconnect_whatsapp(tenant: dict = Depends(get_current_tenant)):
     supabase.table("whatsapp_accounts").update({
         "status": "disconnected",
         "webhook_active": False,
+        "access_token_encrypted": "",
+    }).eq("tenant_id", tenant["id"]).execute()
+
+    supabase.table("bot_configs").update({
+        "bot_enabled": False,
     }).eq("tenant_id", tenant["id"]).execute()
 
     logger.info("WhatsApp disconnected for tenant_id=%s", tenant["id"])
-    return {"message": "WhatsApp desconectado exitosamente."}
+    return {
+        "message": (
+            "WhatsApp desconectado en Doppel. Se desactivaron los webhooks internos "
+            "y las respuestas automáticas."
+        )
+    }
+
+
+@router.delete("/account", response_model=DeleteAccountResponse)
+async def delete_account(tenant: dict = Depends(get_current_tenant)):
+    supabase = get_supabase()
+
+    supabase.table("tenants").delete().eq("id", tenant["id"]).execute()
+    logger.info("Account deleted for tenant_id=%s", tenant["id"])
+    return DeleteAccountResponse(
+        success=True,
+        message="Cuenta y datos asociados eliminados de Doppel.",
+    )

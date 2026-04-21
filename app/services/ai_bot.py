@@ -1,4 +1,5 @@
 import logging
+import asyncio
 
 import anthropic
 
@@ -32,10 +33,24 @@ async def generate_response(
     Returns:
         The generated response text.
     """
-    response = await _get_client().messages.create(
-        model=model,
-        max_tokens=1024,
-        system=system_prompt,
-        messages=conversation,
-    )
-    return response.content[0].text
+    last_error: Exception | None = None
+
+    for attempt in range(settings.ANTHROPIC_API_RETRIES):
+        try:
+            response = await _get_client().messages.create(
+                model=model,
+                max_tokens=1024,
+                system=system_prompt,
+                messages=conversation,
+            )
+            return response.content[0].text
+        except Exception as exc:
+            last_error = exc
+            if attempt == settings.ANTHROPIC_API_RETRIES - 1:
+                raise
+            logger.warning("Anthropic request failed, retrying attempt=%s", attempt + 1)
+            await asyncio.sleep(0.5)
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Anthropic request failed without an exception")
