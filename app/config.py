@@ -1,4 +1,7 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
+
+from app.security import validate_fernet_key
 
 
 class Settings(BaseSettings):
@@ -27,6 +30,12 @@ class Settings(BaseSettings):
     META_API_RETRIES: int = 3
     META_API_RETRY_DELAY_MS: int = 300
     ANTHROPIC_API_RETRIES: int = 2
+
+    @field_validator("ENCRYPTION_KEY")
+    @classmethod
+    def _validate_encryption_key(cls, v: str) -> str:
+        validate_fernet_key(v)
+        return v
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

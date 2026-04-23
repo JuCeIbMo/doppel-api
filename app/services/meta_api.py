@@ -5,6 +5,46 @@ import httpx
 from app.config import settings
 
 
+# Meta error codes we want to treat as idempotent success on retries.
+# Docs: https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes
+_ALREADY_REGISTERED_CODES = {133005, 133006}  # phone already registered / pin reset in progress
+_ALREADY_REGISTERED_HINTS = ("already registered", "already been registered")
+_ALREADY_SUBSCRIBED_HINTS = ("already subscribed",)
+
+
+def _error_payload(response: httpx.Response) -> dict:
+    try:
+        return response.json().get("error", {}) or {}
+    except Exception:
+        return {}
+
+
+def is_already_registered(response: httpx.Response) -> bool:
+    err = _error_payload(response)
+    if err.get("code") in _ALREADY_REGISTERED_CODES:
+        return True
+    msg = (err.get("message") or "").lower()
+    return any(hint in msg for hint in _ALREADY_REGISTERED_HINTS)
+
+
+def is_already_subscribed(response: httpx.Response) -> bool:
+    err = _error_payload(response)
+    msg = (err.get("message") or "").lower()
+    return any(hint in msg for hint in _ALREADY_SUBSCRIBED_HINTS)
+
+
+def meta_error_detail(response: httpx.Response) -> str:
+    """Return a short, log-friendly description of a Meta error response."""
+    err = _error_payload(response)
+    if err:
+        code = err.get("code")
+        subcode = err.get("error_subcode")
+        message = err.get("message") or response.text[:300]
+        tag = f"[{code}/{subcode}]" if subcode is not None else f"[{code}]"
+        return f"{tag} {message}"
+    return response.text[:300]
+
+
 def _should_retry(exc: httpx.HTTPError | None = None, response: httpx.Response | None = None) -> bool:
     if exc is not None:
         return isinstance(exc, (httpx.TimeoutException, httpx.NetworkError))
