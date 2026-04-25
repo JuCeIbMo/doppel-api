@@ -24,6 +24,7 @@ create table whatsapp_accounts (
   token_expiry timestamptz,
   webhook_active boolean default true,
   status text default 'connected',
+  is_coexistence boolean not null default false,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
   unique(waba_id, phone_number_id)
