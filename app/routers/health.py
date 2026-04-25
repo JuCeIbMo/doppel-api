@@ -32,6 +32,7 @@ async def preflight():
     ]
     missing = [k for k in required if not getattr(settings, k, None)]
     checks["env"] = "ok" if not missing else f"missing: {', '.join(missing)}"
+    checks["supabase_key_role"] = "ok"
 
     # 2. Fernet roundtrip (validator already ran at startup, but verify runtime too)
     try:

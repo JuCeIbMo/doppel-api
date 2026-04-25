@@ -1,4 +1,7 @@
-from pydantic import field_validator
+import base64
+import json
+
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings
 
 from app.security import validate_fernet_key
@@ -13,7 +16,9 @@ class Settings(BaseSettings):
 
     # Supabase
     SUPABASE_URL: str
-    SUPABASE_SERVICE_KEY: str
+    SUPABASE_SERVICE_KEY: str = Field(
+        validation_alias=AliasChoices("SUPABASE_SERVICE_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+    )
 
     # Encryption (Fernet key: run `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`)
     ENCRYPTION_KEY: str
@@ -35,6 +40,23 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_encryption_key(cls, v: str) -> str:
         validate_fernet_key(v)
+        return v
+
+    @field_validator("SUPABASE_SERVICE_KEY")
+    @classmethod
+    def _validate_supabase_service_key(cls, v: str) -> str:
+        try:
+            payload = v.split(".")[1]
+            padding = "=" * (-len(payload) % 4)
+            decoded = base64.urlsafe_b64decode(payload + padding)
+            claims = json.loads(decoded)
+        except Exception as exc:
+            raise ValueError("SUPABASE_SERVICE_KEY must be a valid Supabase JWT") from exc
+
+        if claims.get("role") != "service_role":
+            raise ValueError(
+                "SUPABASE_SERVICE_KEY/SUPABASE_SERVICE_ROLE_KEY must be the Supabase service_role key, not anon/public"
+            )
         return v
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
