@@ -126,6 +126,7 @@ class FakeSupabase:
 class MVPApiTests(unittest.TestCase):
     def setUp(self):
         app.dependency_overrides.clear()
+        app.state.http_client = object()
         self.client = TestClient(app)
 
     def tearDown(self):
@@ -137,7 +138,7 @@ class MVPApiTests(unittest.TestCase):
         fake_auth = SimpleNamespace(refresh_session=lambda token: SimpleNamespace(session=fake_session))
         fake_supabase = SimpleNamespace(auth=fake_auth)
 
-        with patch("app.routers.auth.get_supabase", return_value=fake_supabase):
+        with patch("app.routers.auth.get_supabase_auth", return_value=fake_supabase):
             response = self.client.post("/auth/token/refresh", json={"refresh_token": "refresh-token"})
 
         self.assertEqual(response.status_code, 200)
@@ -234,7 +235,7 @@ class MVPApiTests(unittest.TestCase):
         ):
             response = self.client.post(
                 "/webhook/whatsapp",
-                data=raw_body,
+                content=raw_body,
                 headers={"X-Hub-Signature-256": signature, "Content-Type": "application/json"},
             )
 

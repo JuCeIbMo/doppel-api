@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.services.supabase_client import get_supabase
+from app.services.supabase_client import get_supabase, get_supabase_auth
 
 security = HTTPBearer()
 
@@ -12,7 +12,7 @@ async def get_current_user(
     """Verify Bearer JWT token from Supabase Auth and return the user."""
     token = credentials.credentials
     try:
-        supabase = get_supabase()
+        supabase = get_supabase_auth()
         response = supabase.auth.get_user(token)
         return response.user
     except Exception:

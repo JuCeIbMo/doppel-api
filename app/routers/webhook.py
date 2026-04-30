@@ -7,7 +7,9 @@ from fastapi.responses import PlainTextResponse, Response
 
 from app.config import settings
 from app.security import decrypt_token, verify_webhook_signature
-from app.services import ai_bot, meta_api
+from app.services import agent_runtime, meta_api
+from app.services.client_tools import build_client_registry
+from app.services.manager_tools import build_manager_registry
 from app.services.supabase_client import get_supabase
 
 logger = logging.getLogger("doppel.webhook")
@@ -129,10 +131,12 @@ async def _process_bot_response(
     try:
         supabase = get_supabase()
 
-        # Get bot config
+        # Get bot config (incl. manager fields added in migration_v4)
         config_result = (
             supabase.table("bot_configs")
-            .select("system_prompt, ai_model, bot_enabled")
+            .select(
+                "system_prompt, ai_model, bot_enabled, manager_prompt, admin_phones"
+            )
             .eq("tenant_id", tenant_id)
             .single()
             .execute()
@@ -142,7 +146,11 @@ async def _process_bot_response(
             return
 
         config = config_result.data
-        if not config.get("bot_enabled", True):
+        admin_phones = config.get("admin_phones") or []
+        is_manager = user_phone in admin_phones
+
+        # Manager bypasses bot_enabled — operator can talk even when client bot is paused.
+        if not is_manager and not config.get("bot_enabled", True):
             logger.info("Bot disabled for tenant_id=%s", tenant_id)
             return
 
@@ -181,12 +189,31 @@ async def _process_bot_response(
         if not conversation:
             return
 
-        # Generate AI response
-        ai_text = await ai_bot.generate_response(
-            system_prompt=config["system_prompt"],
-            conversation=conversation,
+        # Pick mode-specific prompt + tools, then run the agent loop.
+        if is_manager:
+            system_prompt = config.get("manager_prompt") or config["system_prompt"]
+            tools = build_manager_registry(supabase, tenant_id)
+            mode = "manager"
+        else:
+            system_prompt = config["system_prompt"]
+            tools = build_client_registry(supabase, tenant_id)
+            mode = "client"
+
+        ai_text = await agent_runtime.respond(
+            tenant_id=tenant_id,
+            user_phone=user_phone,
+            mode=mode,
             model=config["ai_model"],
+            system_prompt=system_prompt,
+            conversation=conversation,
+            tools=tools,
         )
+        if not ai_text:
+            logger.warning(
+                "Empty agent response tenant=%s phone=%s mode=%s",
+                tenant_id, user_phone, mode,
+            )
+            return
 
         # Decrypt token and send WhatsApp message
         access_token = decrypt_token(wa_account["access_token_encrypted"], settings.ENCRYPTION_KEY)

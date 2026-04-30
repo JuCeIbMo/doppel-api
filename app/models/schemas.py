@@ -108,3 +108,55 @@ class PaginatedMessages(BaseModel):
 class DeleteAccountResponse(BaseModel):
     success: bool
     message: str
+
+
+class AdminPhonesResponse(BaseModel):
+    """List of phone numbers (digits only, no '+') that may talk to the manager agent."""
+    phones: list[str]
+
+
+class AdminPhonesUpdateRequest(BaseModel):
+    """Replace the full admin-phone list. Server normalizes each entry to digits only."""
+    phones: list[str] = Field(default_factory=list, max_length=10)
+
+
+# Business info / products
+
+
+class BusinessInfoResponse(BaseModel):
+    id: str
+    name: str = ""
+    description: str = ""
+    hours: str = ""
+    address: str = ""
+    payment_methods: str = ""
+
+
+class BusinessInfoUpdateRequest(BaseModel):
+    name: str | None = Field(None, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    hours: str | None = Field(None, max_length=500)
+    address: str | None = Field(None, max_length=500)
+    payment_methods: str | None = Field(None, max_length=500)
+
+
+class ProductResponse(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    price: float | None = None
+    available: bool = True
+
+
+class ProductCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    price: float | None = Field(default=None, ge=0)
+    available: bool = True
+
+
+class ProductUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=2000)
+    price: float | None = Field(None, ge=0)
+    available: bool | None = None

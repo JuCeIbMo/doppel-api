@@ -11,7 +11,7 @@ from app.models.schemas import (
     TokenRefreshRequest,
     UserResponse,
 )
-from app.services.supabase_client import get_supabase
+from app.services.supabase_client import get_supabase, get_supabase_auth
 
 logger = logging.getLogger("doppel.auth")
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -67,7 +67,7 @@ async def send_otp(request: Request, data: OTPSendRequest):
     _check_otp_rate_limits(data.email, ip)
 
     try:
-        get_supabase().auth.sign_in_with_otp({
+        get_supabase_auth().auth.sign_in_with_otp({
             "email": data.email,
             "options": {"should_create_user": True},
         })
@@ -91,7 +91,7 @@ async def send_otp(request: Request, data: OTPSendRequest):
 async def verify_otp(data: OTPVerifyRequest):
     """Verify the OTP code and return a session JWT."""
     try:
-        response = get_supabase().auth.verify_otp({
+        response = get_supabase_auth().auth.verify_otp({
             "email": data.email,
             "token": data.token,
             "type": "email",
@@ -120,7 +120,7 @@ async def verify_otp(data: OTPVerifyRequest):
 async def refresh_token(data: TokenRefreshRequest):
     """Exchange a refresh_token for a new access_token."""
     try:
-        response = get_supabase().auth.refresh_session(data.refresh_token)
+        response = get_supabase_auth().auth.refresh_session(data.refresh_token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -149,7 +149,7 @@ async def me(current_user=Depends(get_current_user)):
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(current_user=Depends(get_current_user)):
     try:
-        get_supabase().auth.admin.sign_out(str(current_user.id))
+        get_supabase_auth().auth.admin.sign_out(str(current_user.id))
     except Exception:
         pass  # Best-effort: invalidate refresh token server-side
     return None
