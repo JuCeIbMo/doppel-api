@@ -16,6 +16,7 @@ class OAuthExchangeResponse(BaseModel):
     message: str
     display_phone: str | None = None
     business_name: str | None = None
+    requires_manager_setup: bool = True
 
 
 # Health
@@ -96,6 +97,8 @@ class MessageResponse(BaseModel):
     content: str | None
     message_type: str
     created_at: str
+    media: list[dict] | None = None
+    agent_mode: str | None = None
 
 
 class PaginatedMessages(BaseModel):

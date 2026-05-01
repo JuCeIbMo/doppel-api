@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 import httpx
 
@@ -220,3 +221,48 @@ async def send_whatsapp_message(
         },
     )
     return response.json()["messages"][0]["id"]
+
+
+async def get_media_url(
+    client: httpx.AsyncClient,
+    media_id: str,
+    token: str,
+    api_version: str,
+) -> dict:
+    """Return Meta media metadata, including the temporary download URL."""
+    response = await _request_with_retry(
+        client,
+        "GET",
+        f"https://graph.facebook.com/{api_version}/{media_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    return response.json()
+
+
+async def download_media_to_path(
+    client: httpx.AsyncClient,
+    media_id: str,
+    token: str,
+    api_version: str,
+    destination: Path,
+) -> dict:
+    """Download one WhatsApp media object to destination and return metadata."""
+    media = await get_media_url(client, media_id, token, api_version)
+    url = media.get("url")
+    if not url:
+        raise RuntimeError(f"Meta media {media_id} did not include a download URL")
+
+    response = await _request_with_retry(
+        client,
+        "GET",
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(response.content)
+    return {
+        "media_id": media_id,
+        "path": str(destination),
+        "mime_type": media.get("mime_type") or response.headers.get("content-type"),
+        "size": len(response.content),
+    }

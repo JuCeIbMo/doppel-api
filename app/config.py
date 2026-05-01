@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     META_API_RETRY_DELAY_MS: int = 300
     ANTHROPIC_API_RETRIES: int = 2
 
+    # Nanobot internal runtime. Empty URL disables agent responses.
+    NANOBOT_RUNTIME_URL: str = ""
+    NANOBOT_RUNTIME_TOKEN: str = ""
+    NANOBOT_RUNTIME_TIMEOUT_SECONDS: float = 120.0
+
     @field_validator("ENCRYPTION_KEY")
     @classmethod
     def _validate_encryption_key(cls, v: str) -> str:

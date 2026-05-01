@@ -115,7 +115,7 @@ async def update_admin_phones(
     supabase = get_supabase()
     result = (
         supabase.table("bot_configs")
-        .update({"admin_phones": cleaned})
+        .update({"admin_phones": cleaned, "bot_enabled": bool(cleaned)})
         .eq("tenant_id", tenant["id"])
         .select("admin_phones")
         .execute()

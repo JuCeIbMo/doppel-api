@@ -142,7 +142,11 @@ async def oauth_exchange(
                 "email": current_user.email,
             }).execute()
             tenant_id = tenant_result.data[0]["id"]
-            supabase.table("bot_configs").insert({"tenant_id": tenant_id}).execute()
+            supabase.table("bot_configs").insert({
+                "tenant_id": tenant_id,
+                "bot_enabled": False,
+                "admin_phones": [],
+            }).execute()
             logger.info("tenant created: id=%s name=%s", tenant_id, business_name)
 
         supabase.table("whatsapp_accounts").upsert({
@@ -225,10 +229,20 @@ async def oauth_exchange(
     if data.is_coexistence:
         background_tasks.add_task(_run_smb_sync, phone_number_id, access_token)
 
+    config_result = (
+        supabase.table("bot_configs")
+        .select("admin_phones")
+        .eq("tenant_id", tenant_id)
+        .single()
+        .execute()
+    )
+    requires_manager_setup = not bool((config_result.data or {}).get("admin_phones") or [])
+
     return OAuthExchangeResponse(
         success=True,
         tenant_id=tenant_id,
         message="WhatsApp conectado exitosamente",
         display_phone=display_phone,
         business_name=business_name,
+        requires_manager_setup=requires_manager_setup,
     )

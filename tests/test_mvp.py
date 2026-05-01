@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import unittest
+from unittest.mock import AsyncMock
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -171,6 +172,23 @@ class MVPApiTests(unittest.TestCase):
         payload = response.json()
         self.assertTrue(payload["success"])
         self.assertEqual(payload["business_name"], "Cafe Doppel")
+        self.assertTrue(payload["requires_manager_setup"])
+        self.assertEqual(fake_store["bot_configs"][0]["bot_enabled"], False)
+
+    def test_admin_phone_setup_enables_bot_when_manager_exists(self):
+        fake_store = {
+            "tenants": [{"id": "tenant-1"}],
+            "bot_configs": [{"id": "cfg-1", "tenant_id": "tenant-1", "admin_phones": [], "bot_enabled": False}],
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        app.dependency_overrides[get_current_tenant] = lambda: fake_store["tenants"][0]
+
+        with patch("app.routers.dashboard.get_supabase", return_value=fake_supabase):
+            response = self.client.put("/me/admin-phones", json={"phones": ["+591 700-00001"]})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phones"], ["59170000001"])
+        self.assertEqual(fake_store["bot_configs"][0]["bot_enabled"], True)
 
     def test_dashboard_messages_and_delete_account(self):
         fake_store = {
@@ -241,6 +259,200 @@ class MVPApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(fake_store["messages"]), 1)
+
+    def test_webhook_routes_admin_phone_to_nanobot_manager(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {"phone_number_id": "phone-1"},
+                                "messages": [
+                                    {"id": "wamid-2", "from": "59170000001", "type": "text", "text": {"body": "Cambia horario"}}
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        fake_store = {
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "tenant_id": "tenant-1",
+                    "phone_number_id": "phone-1",
+                    "status": "connected",
+                    "access_token_encrypted": "encrypted",
+                }
+            ],
+            "bot_configs": [
+                {
+                    "tenant_id": "tenant-1",
+                    "admin_phones": ["59170000001"],
+                    "bot_enabled": False,
+                    "ai_model": "claude-test",
+                }
+            ],
+            "messages": [],
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        nanobot_response = AsyncMock(return_value={"reply": "Listo", "mode": "manager"})
+
+        with (
+            patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
+            patch("app.routers.webhook.verify_webhook_signature", return_value=True),
+            patch("app.routers.webhook.settings.NANOBOT_RUNTIME_URL", "http://nanobot"),
+            patch("app.routers.webhook.nanobot_runtime.respond", nanobot_response),
+            patch("app.routers.webhook.decrypt_token", return_value="token"),
+            patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-1")),
+        ):
+            response = self.client.post(
+                "/webhook/whatsapp",
+                content=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        nanobot_response.assert_awaited_once()
+        self.assertEqual(nanobot_response.await_args.kwargs["mode"], "manager")
+        self.assertEqual(fake_store["messages"][0]["agent_mode"], "manager")
+        self.assertEqual(fake_store["messages"][1]["content"], "Listo")
+
+    def test_webhook_routes_regular_phone_to_nanobot_client(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {"phone_number_id": "phone-1"},
+                                "messages": [
+                                    {"id": "wamid-3", "from": "59170000002", "type": "text", "text": {"body": "Precio?"}}
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        fake_store = {
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "tenant_id": "tenant-1",
+                    "phone_number_id": "phone-1",
+                    "status": "connected",
+                    "access_token_encrypted": "encrypted",
+                }
+            ],
+            "bot_configs": [
+                {
+                    "tenant_id": "tenant-1",
+                    "admin_phones": ["59170000001"],
+                    "bot_enabled": True,
+                    "ai_model": "claude-test",
+                }
+            ],
+            "messages": [],
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        nanobot_response = AsyncMock(return_value={"reply": "Cuesta 10", "mode": "client"})
+
+        with (
+            patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
+            patch("app.routers.webhook.verify_webhook_signature", return_value=True),
+            patch("app.routers.webhook.settings.NANOBOT_RUNTIME_URL", "http://nanobot"),
+            patch("app.routers.webhook.nanobot_runtime.respond", nanobot_response),
+            patch("app.routers.webhook.decrypt_token", return_value="token"),
+            patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-2")),
+        ):
+            response = self.client.post(
+                "/webhook/whatsapp",
+                content=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        nanobot_response.assert_awaited_once()
+        self.assertEqual(nanobot_response.await_args.kwargs["mode"], "client")
+        self.assertEqual(fake_store["messages"][0]["agent_mode"], "client")
+
+    def test_webhook_downloads_media_before_calling_nanobot(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {"phone_number_id": "phone-1"},
+                                "messages": [
+                                    {
+                                        "id": "wamid-4",
+                                        "from": "59170000002",
+                                        "type": "image",
+                                        "image": {
+                                            "id": "media-1",
+                                            "mime_type": "image/jpeg",
+                                            "caption": "Mira esto",
+                                        },
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        fake_store = {
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "tenant_id": "tenant-1",
+                    "phone_number_id": "phone-1",
+                    "status": "connected",
+                    "access_token_encrypted": "encrypted",
+                }
+            ],
+            "bot_configs": [
+                {
+                    "tenant_id": "tenant-1",
+                    "admin_phones": [],
+                    "bot_enabled": True,
+                    "ai_model": "claude-test",
+                }
+            ],
+            "messages": [],
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        nanobot_response = AsyncMock(return_value={"reply": "Veo la imagen", "mode": "client"})
+        download_media = AsyncMock(return_value={
+            "path": "C:/tmp/media-1.jpg",
+            "mime_type": "image/jpeg",
+            "size": 123,
+        })
+
+        with (
+            patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
+            patch("app.routers.webhook.verify_webhook_signature", return_value=True),
+            patch("app.routers.webhook.settings.NANOBOT_RUNTIME_URL", "http://nanobot"),
+            patch("app.routers.webhook.nanobot_runtime.respond", nanobot_response),
+            patch("app.routers.webhook.decrypt_token", return_value="token"),
+            patch("app.routers.webhook.meta_api.download_media_to_path", download_media),
+            patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-3")),
+        ):
+            response = self.client.post(
+                "/webhook/whatsapp",
+                content=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_store["messages"][0]["media"][0]["id"], "media-1")
+        download_media.assert_awaited_once()
+        self.assertEqual(nanobot_response.await_args.kwargs["content"], "Mira esto")
+        self.assertEqual(nanobot_response.await_args.kwargs["media_paths"], ["C:/tmp/media-1.jpg"])
 
 
 if __name__ == "__main__":

@@ -1,5 +1,8 @@
 import json
 import logging
+import tempfile
+import uuid
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Query, Request
@@ -7,13 +10,13 @@ from fastapi.responses import PlainTextResponse, Response
 
 from app.config import settings
 from app.security import decrypt_token, verify_webhook_signature
-from app.services import agent_runtime, meta_api
-from app.services.client_tools import build_client_registry
-from app.services.manager_tools import build_manager_registry
+from app.services import meta_api, nanobot_runtime
+from app.services.manager_tools import normalize_phone
 from app.services.supabase_client import get_supabase
 
 logger = logging.getLogger("doppel.webhook")
 router = APIRouter(tags=["Webhook"])
+_MEDIA_MESSAGE_TYPES = {"image", "audio", "voice", "document"}
 
 
 @router.get("/webhook/whatsapp")
@@ -67,6 +70,16 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     logger.warning("No active account found for phone_number_id=%s", phone_number_id)
                     continue
 
+                config_result = (
+                    supabase.table("bot_configs")
+                    .select("admin_phones, bot_enabled")
+                    .eq("tenant_id", account["tenant_id"])
+                    .single()
+                    .execute()
+                )
+                config = config_result.data or {}
+                admin_phones = config.get("admin_phones") or []
+
                 # Save each inbound message and schedule bot response
                 for msg in messages:
                     wa_message_id = msg.get("id")
@@ -83,34 +96,43 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                             continue
 
                     msg_type = msg.get("type", "text")
-                    content = None
-                    if msg_type == "text":
-                        content = msg.get("text", {}).get("body")
+                    content, media = _extract_message_content_and_media(msg)
+                    user_phone = normalize_phone(msg.get("from")) or msg.get("from")
+                    mode = "manager" if user_phone in admin_phones else "client"
 
                     supabase.table("messages").insert({
                         "tenant_id": account["tenant_id"],
                         "wa_account_id": account["id"],
-                        "user_phone": msg.get("from"),
+                        "user_phone": user_phone,
                         "direction": "inbound",
                         "content": content,
                         "message_type": msg_type,
                         "wa_message_id": wa_message_id,
+                        "media": media,
+                        "agent_mode": mode,
                     }).execute()
 
                     logger.info(
                         "Saved message from=%s phone_id=%s type=%s",
-                        msg.get("from"), phone_number_id, msg_type,
+                        user_phone, phone_number_id, msg_type,
                     )
 
-                    # Schedule bot response (only for text messages, only if AI is configured)
-                    if msg_type == "text" and content and settings.ANTHROPIC_API_KEY:
+                    should_process = bool(settings.NANOBOT_RUNTIME_URL and (content or media))
+                    if mode == "client" and not config.get("bot_enabled", True):
+                        should_process = False
+
+                    # Schedule bot response through nanobot. Manager bypasses bot_enabled.
+                    if should_process:
                         background_tasks.add_task(
                             _process_bot_response,
                             request.app.state.http_client,
                             account["tenant_id"],
                             account["id"],
-                            msg.get("from"),
-                            content,
+                            user_phone,
+                            content or "",
+                            mode,
+                            wa_message_id,
+                            media,
                         )
 
     except Exception:
@@ -120,12 +142,90 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     return Response(status_code=200)
 
 
+def _extract_message_content_and_media(msg: dict) -> tuple[str | None, list[dict]]:
+    msg_type = msg.get("type", "text")
+    if msg_type == "text":
+        return msg.get("text", {}).get("body"), []
+
+    if msg_type not in _MEDIA_MESSAGE_TYPES:
+        return None, []
+
+    payload = msg.get(msg_type) or {}
+    media_id = payload.get("id")
+    media = []
+    if media_id:
+        media.append(
+            {
+                "id": media_id,
+                "type": msg_type,
+                "mime_type": payload.get("mime_type"),
+                "sha256": payload.get("sha256"),
+                "filename": payload.get("filename"),
+            }
+        )
+    return payload.get("caption") or f"[{msg_type} message]", media
+
+
+def _media_download_path(*, tenant_id: str, media_item: dict) -> Path:
+    suffix = ""
+    filename = media_item.get("filename")
+    if filename:
+        suffix = Path(str(filename)).suffix
+    if not suffix:
+        suffix = {
+            "image/jpeg": ".jpg",
+            "image/png": ".png",
+            "audio/ogg": ".ogg",
+            "audio/mpeg": ".mp3",
+            "application/pdf": ".pdf",
+        }.get(str(media_item.get("mime_type") or ""), "")
+    return (
+        Path(tempfile.gettempdir())
+        / "doppel-whatsapp-media"
+        / tenant_id
+        / f"{uuid.uuid4().hex}{suffix}"
+    )
+
+
+async def _download_media_files(
+    http_client: httpx.AsyncClient,
+    *,
+    tenant_id: str,
+    token: str,
+    media: list[dict] | None,
+) -> list[str]:
+    paths: list[str] = []
+    for item in media or []:
+        media_id = item.get("id")
+        if not media_id:
+            continue
+        downloaded = await meta_api.download_media_to_path(
+            http_client,
+            str(media_id),
+            token,
+            settings.META_API_VERSION,
+            _media_download_path(tenant_id=tenant_id, media_item=item),
+        )
+        item.update(
+            {
+                "local_path": downloaded["path"],
+                "downloaded_mime_type": downloaded.get("mime_type"),
+                "size": downloaded.get("size"),
+            }
+        )
+        paths.append(downloaded["path"])
+    return paths
+
+
 async def _process_bot_response(
     http_client: httpx.AsyncClient,
     tenant_id: str,
     wa_account_id: str,
     user_phone: str,
     inbound_text: str,
+    mode: str,
+    inbound_message_id: str | None,
+    media: list[dict] | None = None,
 ) -> None:
     """Generate AI response and send it via WhatsApp. Runs as a background task."""
     try:
@@ -134,9 +234,7 @@ async def _process_bot_response(
         # Get bot config (incl. manager fields added in migration_v4)
         config_result = (
             supabase.table("bot_configs")
-            .select(
-                "system_prompt, ai_model, bot_enabled, manager_prompt, admin_phones"
-            )
+            .select("ai_model, bot_enabled, admin_phones")
             .eq("tenant_id", tenant_id)
             .single()
             .execute()
@@ -146,8 +244,7 @@ async def _process_bot_response(
             return
 
         config = config_result.data
-        admin_phones = config.get("admin_phones") or []
-        is_manager = user_phone in admin_phones
+        is_manager = mode == "manager"
 
         # Manager bypasses bot_enabled — operator can talk even when client bot is paused.
         if not is_manager and not config.get("bot_enabled", True):
@@ -167,47 +264,26 @@ async def _process_bot_response(
             return
 
         wa_account = wa_result.data
-
-        # Build conversation history (most recent N messages)
-        history = (
-            supabase.table("messages")
-            .select("direction, content")
-            .eq("tenant_id", tenant_id)
-            .eq("user_phone", user_phone)
-            .order("created_at", desc=True)
-            .limit(settings.AI_CONTEXT_MESSAGES)
-            .execute()
-        )
-
-        # Reverse to chronological order and map to Anthropic format
-        conversation = []
-        for m in reversed(history.data):
-            if m["content"]:
-                role = "user" if m["direction"] == "inbound" else "assistant"
-                conversation.append({"role": role, "content": m["content"]})
-
-        if not conversation:
-            return
-
-        # Pick mode-specific prompt + tools, then run the agent loop.
-        if is_manager:
-            system_prompt = config.get("manager_prompt") or config["system_prompt"]
-            tools = build_manager_registry(supabase, tenant_id)
-            mode = "manager"
-        else:
-            system_prompt = config["system_prompt"]
-            tools = build_client_registry(supabase, tenant_id)
-            mode = "client"
-
-        ai_text = await agent_runtime.respond(
+        access_token = decrypt_token(wa_account["access_token_encrypted"], settings.ENCRYPTION_KEY)
+        media_paths = await _download_media_files(
+            http_client,
             tenant_id=tenant_id,
-            user_phone=user_phone,
-            mode=mode,
-            model=config["ai_model"],
-            system_prompt=system_prompt,
-            conversation=conversation,
-            tools=tools,
+            token=access_token,
+            media=media,
         )
+
+        result = await nanobot_runtime.respond(
+            http_client,
+            tenant_id=tenant_id,
+            mode=mode,
+            sender_id=user_phone,
+            chat_id=user_phone,
+            message_id=inbound_message_id,
+            content=inbound_text,
+            model=config["ai_model"],
+            media_paths=media_paths,
+        )
+        ai_text = str(result.get("reply") or "").strip()
         if not ai_text:
             logger.warning(
                 "Empty agent response tenant=%s phone=%s mode=%s",
@@ -215,8 +291,6 @@ async def _process_bot_response(
             )
             return
 
-        # Decrypt token and send WhatsApp message
-        access_token = decrypt_token(wa_account["access_token_encrypted"], settings.ENCRYPTION_KEY)
         wa_msg_id = await meta_api.send_whatsapp_message(
             http_client,
             wa_account["phone_number_id"],
@@ -235,6 +309,8 @@ async def _process_bot_response(
             "content": ai_text,
             "message_type": "text",
             "wa_message_id": wa_msg_id,
+            "media": [],
+            "agent_mode": mode,
         }).execute()
 
         logger.info("Bot responded to=%s tenant_id=%s", user_phone, tenant_id)
