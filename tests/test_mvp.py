@@ -263,12 +263,19 @@ class MVPApiTests(unittest.TestCase):
 
         try:
             with patch("app.routers.dashboard.get_supabase", return_value=fake_supabase):
-                response = client.put("/me/bot-config", json={"welcome_message": "bienvenido"})
+                response = client.put(
+                    "/me/bot-config",
+                    json={
+                        "welcome_message": "bienvenido",
+                        "ai_model": "claude-sonnet-4-20250514",
+                    },
+                )
         finally:
             client.close()
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["welcome_message"], "bienvenido")
+        self.assertEqual(fake_store["bot_configs"][0]["ai_model"], "claude-test")
 
     def test_dashboard_messages_and_delete_account(self):
         fake_store = {
@@ -397,6 +404,7 @@ class MVPApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         nanobot_response.assert_awaited_once()
         self.assertEqual(nanobot_response.await_args.kwargs["mode"], "manager")
+        self.assertNotIn("model", nanobot_response.await_args.kwargs)
         self.assertEqual(fake_store["messages"][0]["agent_mode"], "manager")
         self.assertEqual(fake_store["messages"][1]["content"], "Listo")
 

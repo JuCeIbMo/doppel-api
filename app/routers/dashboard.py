@@ -48,7 +48,7 @@ async def get_bot_config(tenant: dict = Depends(get_current_tenant)):
     result = (
         get_supabase()
         .table("bot_configs")
-        .select("id, system_prompt, welcome_message, language, ai_model, bot_enabled")
+        .select("id, system_prompt, welcome_message, language, bot_enabled")
         .eq("tenant_id", tenant["id"])
         .single()
         .execute()

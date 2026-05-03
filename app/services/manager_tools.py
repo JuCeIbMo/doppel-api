@@ -62,7 +62,7 @@ class GetBotConfigTool(_BotConfigTool):
     def description(self) -> str:
         return (
             "Read the current bot configuration for this tenant: system prompt, "
-            "welcome message, language, AI model, enabled flag."
+            "welcome message, language, enabled flag."
         )
 
     @property
@@ -73,8 +73,8 @@ class GetBotConfigTool(_BotConfigTool):
         result = (
             self.supabase.table("bot_configs")
             .select(
-                "system_prompt, welcome_message, language, ai_model, "
-                "bot_enabled, manager_prompt, admin_phones"
+                "system_prompt, welcome_message, language, bot_enabled, "
+                "manager_prompt, admin_phones"
             )
             .eq("tenant_id", self.tenant_id)
             .single()

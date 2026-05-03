@@ -234,7 +234,7 @@ async def _process_bot_response(
         # Get bot config (incl. manager fields added in migration_v4)
         config_result = (
             supabase.table("bot_configs")
-            .select("ai_model, bot_enabled, admin_phones")
+            .select("bot_enabled, admin_phones")
             .eq("tenant_id", tenant_id)
             .single()
             .execute()
@@ -280,7 +280,6 @@ async def _process_bot_response(
             chat_id=user_phone,
             message_id=inbound_message_id,
             content=inbound_text,
-            model=config["ai_model"],
             media_paths=media_paths,
         )
         ai_text = str(result.get("reply") or "").strip()

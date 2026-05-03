@@ -78,7 +78,6 @@ class BotConfigResponse(BaseModel):
     system_prompt: str
     welcome_message: str
     language: str
-    ai_model: str
     bot_enabled: bool
 
 
@@ -86,7 +85,6 @@ class BotConfigUpdateRequest(BaseModel):
     system_prompt: str | None = Field(None, max_length=4000)
     welcome_message: str | None = Field(None, max_length=500)
     language: str | None = Field(None, max_length=10)
-    ai_model: str | None = Field(None, max_length=50)
     bot_enabled: bool | None = None
 
 

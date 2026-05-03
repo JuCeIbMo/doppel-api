@@ -25,7 +25,6 @@ async def respond(
     chat_id: str,
     message_id: str | None,
     content: str,
-    model: str,
     media_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     """Send one WhatsApp turn to nanobot and return its JSON payload."""
@@ -45,7 +44,6 @@ async def respond(
         "chat_id": chat_id,
         "message_id": message_id or "",
         "content": content,
-        "model": model,
     }
 
     files = []
