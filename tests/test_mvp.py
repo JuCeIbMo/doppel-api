@@ -124,6 +124,39 @@ class FakeSupabase:
         return FakeTableQuery(name, self.store)
 
 
+class StrictFilteredMutation:
+    """Supabase-like filtered mutation builder: execute/eq only, no select()."""
+
+    def __init__(self, query):
+        self.query = query
+
+    def eq(self, key, value):
+        self.query.eq(key, value)
+        return self
+
+    def execute(self):
+        return self.query.execute()
+
+
+class StrictMutationQuery(FakeTableQuery):
+    """Fake the production builder shape after update().eq(...)."""
+
+    def update(self, payload):
+        super().update(payload)
+        return self
+
+    def eq(self, key, value):
+        super().eq(key, value)
+        if self._update_payload is not None:
+            return StrictFilteredMutation(self)
+        return self
+
+
+class StrictSupabase(FakeSupabase):
+    def table(self, name):
+        return StrictMutationQuery(name, self.store)
+
+
 class MVPApiTests(unittest.TestCase):
     def setUp(self):
         app.dependency_overrides.clear()
@@ -189,6 +222,53 @@ class MVPApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["phones"], ["59170000001"])
         self.assertEqual(fake_store["bot_configs"][0]["bot_enabled"], True)
+
+    def test_admin_phone_setup_works_with_supabase_filtered_update_builder(self):
+        fake_store = {
+            "tenants": [{"id": "tenant-1"}],
+            "bot_configs": [{"id": "cfg-1", "tenant_id": "tenant-1", "admin_phones": [], "bot_enabled": False}],
+        }
+        fake_supabase = StrictSupabase(fake_store)
+        app.dependency_overrides[get_current_tenant] = lambda: fake_store["tenants"][0]
+        client = TestClient(app, raise_server_exceptions=False)
+
+        try:
+            with patch("app.routers.dashboard.get_supabase", return_value=fake_supabase):
+                response = client.put("/me/admin-phones", json={"phones": ["+591 700-00001"]})
+        finally:
+            client.close()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["phones"], ["59170000001"])
+        self.assertEqual(fake_store["bot_configs"][0]["bot_enabled"], True)
+
+    def test_bot_config_update_works_with_supabase_filtered_update_builder(self):
+        fake_store = {
+            "tenants": [{"id": "tenant-1"}],
+            "bot_configs": [
+                {
+                    "id": "cfg-1",
+                    "tenant_id": "tenant-1",
+                    "system_prompt": "old",
+                    "welcome_message": "hola",
+                    "language": "es",
+                    "ai_model": "claude-test",
+                    "bot_enabled": False,
+                }
+            ],
+        }
+        fake_supabase = StrictSupabase(fake_store)
+        app.dependency_overrides[get_current_tenant] = lambda: fake_store["tenants"][0]
+        client = TestClient(app, raise_server_exceptions=False)
+
+        try:
+            with patch("app.routers.dashboard.get_supabase", return_value=fake_supabase):
+                response = client.put("/me/bot-config", json={"welcome_message": "bienvenido"})
+        finally:
+            client.close()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["welcome_message"], "bienvenido")
 
     def test_dashboard_messages_and_delete_account(self):
         fake_store = {

@@ -72,7 +72,6 @@ async def update_bot_config(
         supabase.table("bot_configs")
         .update(update_data)
         .eq("tenant_id", tenant["id"])
-        .select("id, system_prompt, welcome_message, language, ai_model, bot_enabled")
         .execute()
     )
     if not result.data:
@@ -117,7 +116,6 @@ async def update_admin_phones(
         supabase.table("bot_configs")
         .update({"admin_phones": cleaned, "bot_enabled": bool(cleaned)})
         .eq("tenant_id", tenant["id"])
-        .select("admin_phones")
         .execute()
     )
     if not result.data:
