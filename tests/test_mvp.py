@@ -639,6 +639,7 @@ class MVPApiTests(unittest.TestCase):
                 {
                     "id": "wa-1",
                     "phone_number_id": "phone-asistpro",
+                    "display_phone": "59170000008",
                     "status": "connected",
                     "access_token_encrypted": "encrypted",
                 }
@@ -661,11 +662,43 @@ class MVPApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["message_id"], "wamid-out-text")
+        self.assertEqual(response.json()["phone_number_id"], "phone-asistpro")
+        self.assertEqual(response.json()["to"], "59170000009")
         send_message.assert_awaited_once()
         self.assertEqual(send_message.await_args.args[1], "phone-asistpro")
         self.assertEqual(send_message.await_args.args[2], "59170000009")
         self.assertEqual(send_message.await_args.args[3], "Respuesta")
         self.assertEqual(send_message.await_args.args[4], "meta-token")
+
+    def test_asistpro_send_text_endpoint_rejects_self_send(self):
+        fake_store = {
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "phone_number_id": "phone-asistpro",
+                    "display_phone": "591720906023",
+                    "status": "connected",
+                    "access_token_encrypted": "encrypted",
+                }
+            ]
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        send_message = AsyncMock(return_value="wamid-out-text")
+
+        with (
+            patch("app.routers.asistpro.get_supabase", return_value=fake_supabase),
+            patch("app.routers.asistpro.meta_api.send_whatsapp_message", send_message),
+            patch("app.routers.asistpro.settings.ASISTPRO_SEND_API_KEY", "send-secret", create=True),
+        ):
+            response = self.client.post(
+                "/integrations/asistpro/whatsapp/messages/text",
+                headers={"Authorization": "Bearer send-secret"},
+                json={"to": "591720906023", "text": "Respuesta"},
+            )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("itself", response.json()["detail"])
+        send_message.assert_not_awaited()
 
     def test_asistpro_send_image_endpoint_sends_image_link(self):
         fake_store = {
@@ -673,6 +706,7 @@ class MVPApiTests(unittest.TestCase):
                 {
                     "id": "wa-1",
                     "phone_number_id": "phone-asistpro",
+                    "display_phone": "59170000008",
                     "status": "connected",
                     "access_token_encrypted": "encrypted",
                 }
@@ -699,6 +733,8 @@ class MVPApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["message_id"], "wamid-out-image")
+        self.assertEqual(response.json()["phone_number_id"], "phone-asistpro")
+        self.assertEqual(response.json()["to"], "59170000009")
         send_image.assert_awaited_once()
         self.assertEqual(send_image.await_args.args[1], "phone-asistpro")
         self.assertEqual(send_image.await_args.args[2], "59170000009")

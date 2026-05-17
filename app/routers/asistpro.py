@@ -1,3 +1,4 @@
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -12,6 +13,7 @@ from app.services.supabase_client import get_supabase
 
 router = APIRouter(prefix="/integrations/asistpro", tags=["Asistpro"])
 security = HTTPBearer()
+logger = logging.getLogger("doppel.asistpro")
 
 
 class AsistproTextMessageRequest(BaseModel):
@@ -31,6 +33,8 @@ class AsistproSendMessageResponse(BaseModel):
     success: bool = True
     message_id: str
     type: Literal["text", "image"]
+    phone_number_id: str
+    to: str
 
 
 async def require_asistpro_api_key(
@@ -52,7 +56,7 @@ def _get_connected_account(phone_number_id: str | None = None) -> dict:
     query = (
         get_supabase()
         .table("whatsapp_accounts")
-        .select("phone_number_id, access_token_encrypted")
+        .select("phone_number_id, display_phone, access_token_encrypted")
         .eq("status", "connected")
     )
     if resolved_phone_number_id:
@@ -64,6 +68,23 @@ def _get_connected_account(phone_number_id: str | None = None) -> dict:
             detail="No connected WhatsApp account found for Asistpro.",
         )
     return result.data[0]
+
+
+def _normalize_recipient(raw_to: str, account: dict) -> str:
+    recipient = normalize_phone(raw_to)
+    if not recipient:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Recipient phone number is invalid.",
+        )
+
+    display_phone = normalize_phone(account.get("display_phone") or "")
+    if display_phone and recipient == display_phone:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cannot send a WhatsApp message from a business phone number to itself.",
+        )
+    return recipient
 
 
 def _decrypt_account_token(account: dict) -> str:
@@ -83,15 +104,27 @@ def _decrypt_account_token(account: dict) -> str:
 )
 async def send_text_message(request: Request, data: AsistproTextMessageRequest):
     account = _get_connected_account(data.phone_number_id)
+    recipient = _normalize_recipient(data.to, account)
     message_id = await meta_api.send_whatsapp_message(
         request.app.state.http_client,
         account["phone_number_id"],
-        normalize_phone(data.to),
+        recipient,
         data.text,
         _decrypt_account_token(account),
         settings.META_API_VERSION,
     )
-    return AsistproSendMessageResponse(message_id=message_id, type="text")
+    logger.info(
+        "Asistpro text accepted phone_id=%s to=%s message_id=%s",
+        account["phone_number_id"],
+        recipient,
+        message_id,
+    )
+    return AsistproSendMessageResponse(
+        message_id=message_id,
+        type="text",
+        phone_number_id=account["phone_number_id"],
+        to=recipient,
+    )
 
 
 @router.post(
@@ -101,13 +134,25 @@ async def send_text_message(request: Request, data: AsistproTextMessageRequest):
 )
 async def send_image_message(request: Request, data: AsistproImageMessageRequest):
     account = _get_connected_account(data.phone_number_id)
+    recipient = _normalize_recipient(data.to, account)
     message_id = await meta_api.send_whatsapp_image_message(
         request.app.state.http_client,
         account["phone_number_id"],
-        normalize_phone(data.to),
+        recipient,
         str(data.image_url),
         data.caption,
         _decrypt_account_token(account),
         settings.META_API_VERSION,
     )
-    return AsistproSendMessageResponse(message_id=message_id, type="image")
+    logger.info(
+        "Asistpro image accepted phone_id=%s to=%s message_id=%s",
+        account["phone_number_id"],
+        recipient,
+        message_id,
+    )
+    return AsistproSendMessageResponse(
+        message_id=message_id,
+        type="image",
+        phone_number_id=account["phone_number_id"],
+        to=recipient,
+    )
