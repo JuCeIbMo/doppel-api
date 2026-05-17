@@ -223,6 +223,36 @@ async def send_whatsapp_message(
     return response.json()["messages"][0]["id"]
 
 
+async def send_whatsapp_image_message(
+    client: httpx.AsyncClient,
+    phone_number_id: str,
+    to: str,
+    image_url: str,
+    caption: str | None,
+    token: str,
+    api_version: str,
+) -> str:
+    """Send an image message via WhatsApp Cloud API using a public HTTPS URL."""
+    image: dict[str, str] = {"link": image_url}
+    if caption:
+        image["caption"] = caption
+
+    response = await _request_with_retry(
+        client,
+        "POST",
+        f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "image",
+            "image": image,
+        },
+    )
+    return response.json()["messages"][0]["id"]
+
+
 async def get_media_url(
     client: httpx.AsyncClient,
     media_id: str,

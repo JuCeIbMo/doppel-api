@@ -41,6 +41,24 @@ class Settings(BaseSettings):
     NANOBOT_RUNTIME_TOKEN: str = ""
     NANOBOT_RUNTIME_TIMEOUT_SECONDS: float = 120.0
 
+    # Asistpro WhatsApp gateway. Phone IDs listed here bypass Doppel agent flow.
+    ASISTPRO_PHONE_NUMBER_IDS: list[str] = []
+    ASISTPRO_N8N_WEBHOOK_URL: str = ""
+    ASISTPRO_WEBHOOK_SECRET: str = ""
+    ASISTPRO_SEND_API_KEY: str = ""
+
+    @field_validator("ALLOWED_ORIGINS", "ASISTPRO_PHONE_NUMBER_IDS", mode="before")
+    @classmethod
+    def _parse_list_setting(cls, v):
+        if isinstance(v, str):
+            raw = v.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                return json.loads(raw)
+            return [item.strip() for item in raw.split(",") if item.strip()]
+        return v
+
     @field_validator("ENCRYPTION_KEY")
     @classmethod
     def _validate_encryption_key(cls, v: str) -> str:

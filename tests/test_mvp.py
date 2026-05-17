@@ -542,6 +542,138 @@ class MVPApiTests(unittest.TestCase):
         self.assertEqual(nanobot_response.await_args.kwargs["content"], "Mira esto")
         self.assertEqual(nanobot_response.await_args.kwargs["media_paths"], ["C:/tmp/media-1.jpg"])
 
+    def test_webhook_routes_configured_phone_number_to_asistpro_n8n(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {"phone_number_id": "phone-asistpro"},
+                                "messages": [
+                                    {"id": "wamid-asistpro-1", "from": "59170000009", "type": "text", "text": {"body": "Hola Asistpro"}}
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        raw_body = json.dumps(payload).encode()
+        fake_store = {"messages": []}
+        fake_supabase = FakeSupabase(fake_store)
+        response_from_n8n = SimpleNamespace(raise_for_status=lambda: None)
+        http_client = SimpleNamespace(post=AsyncMock(return_value=response_from_n8n))
+        app.state.http_client = http_client
+
+        with (
+            patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
+            patch("app.routers.webhook.verify_webhook_signature", return_value=True),
+            patch("app.routers.webhook.settings.ASISTPRO_PHONE_NUMBER_IDS", ["phone-asistpro"], create=True),
+            patch("app.routers.webhook.settings.ASISTPRO_N8N_WEBHOOK_URL", "https://n8n.example/webhook", create=True),
+            patch("app.routers.webhook.settings.ASISTPRO_WEBHOOK_SECRET", "shared-secret", create=True),
+            patch("app.routers.webhook.nanobot_runtime.respond", AsyncMock()) as nanobot_response,
+        ):
+            response = self.client.post(
+                "/webhook/whatsapp",
+                content=raw_body,
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        http_client.post.assert_awaited_once()
+        self.assertEqual(http_client.post.await_args.args[0], "https://n8n.example/webhook")
+        forwarded = http_client.post.await_args.kwargs["json"]
+        self.assertEqual(forwarded["app"], "asistpro")
+        self.assertEqual(forwarded["phone_number_id"], "phone-asistpro")
+        self.assertEqual(forwarded["from"], "59170000009")
+        self.assertEqual(forwarded["text"], "Hola Asistpro")
+        self.assertEqual(http_client.post.await_args.kwargs["headers"]["X-Asistpro-Webhook-Secret"], "shared-secret")
+        self.assertEqual(fake_store["messages"], [])
+        nanobot_response.assert_not_awaited()
+
+    def test_asistpro_send_text_endpoint_uses_connected_meta_account(self):
+        fake_store = {
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "phone_number_id": "phone-asistpro",
+                    "status": "connected",
+                    "access_token_encrypted": "encrypted",
+                }
+            ]
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        send_message = AsyncMock(return_value="wamid-out-text")
+
+        with (
+            patch("app.routers.asistpro.get_supabase", return_value=fake_supabase),
+            patch("app.routers.asistpro.decrypt_token", return_value="meta-token"),
+            patch("app.routers.asistpro.meta_api.send_whatsapp_message", send_message),
+            patch("app.routers.asistpro.settings.ASISTPRO_SEND_API_KEY", "send-secret", create=True),
+        ):
+            response = self.client.post(
+                "/integrations/asistpro/whatsapp/messages/text",
+                headers={"Authorization": "Bearer send-secret"},
+                json={"to": "59170000009", "text": "Respuesta"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message_id"], "wamid-out-text")
+        send_message.assert_awaited_once()
+        self.assertEqual(send_message.await_args.args[1], "phone-asistpro")
+        self.assertEqual(send_message.await_args.args[2], "59170000009")
+        self.assertEqual(send_message.await_args.args[3], "Respuesta")
+        self.assertEqual(send_message.await_args.args[4], "meta-token")
+
+    def test_asistpro_send_image_endpoint_sends_image_link(self):
+        fake_store = {
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "phone_number_id": "phone-asistpro",
+                    "status": "connected",
+                    "access_token_encrypted": "encrypted",
+                }
+            ]
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        send_image = AsyncMock(return_value="wamid-out-image")
+
+        with (
+            patch("app.routers.asistpro.get_supabase", return_value=fake_supabase),
+            patch("app.routers.asistpro.decrypt_token", return_value="meta-token"),
+            patch("app.routers.asistpro.meta_api.send_whatsapp_image_message", send_image),
+            patch("app.routers.asistpro.settings.ASISTPRO_SEND_API_KEY", "send-secret", create=True),
+        ):
+            response = self.client.post(
+                "/integrations/asistpro/whatsapp/messages/image",
+                headers={"Authorization": "Bearer send-secret"},
+                json={
+                    "to": "59170000009",
+                    "image_url": "https://cdn.example/image.jpg",
+                    "caption": "Imagen",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message_id"], "wamid-out-image")
+        send_image.assert_awaited_once()
+        self.assertEqual(send_image.await_args.args[1], "phone-asistpro")
+        self.assertEqual(send_image.await_args.args[2], "59170000009")
+        self.assertEqual(send_image.await_args.args[3], "https://cdn.example/image.jpg")
+        self.assertEqual(send_image.await_args.args[4], "Imagen")
+
+    def test_asistpro_send_endpoint_rejects_invalid_api_key(self):
+        with patch("app.routers.asistpro.settings.ASISTPRO_SEND_API_KEY", "send-secret", create=True):
+            response = self.client.post(
+                "/integrations/asistpro/whatsapp/messages/text",
+                headers={"Authorization": "Bearer wrong"},
+                json={"to": "59170000009", "text": "Respuesta"},
+            )
+
+        self.assertEqual(response.status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

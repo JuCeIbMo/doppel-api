@@ -56,6 +56,15 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                 if not phone_number_id or not messages:
                     continue
 
+                if _is_asistpro_phone_number(phone_number_id):
+                    await _forward_asistpro_messages(
+                        request.app.state.http_client,
+                        raw_payload=payload,
+                        phone_number_id=phone_number_id,
+                        messages=messages,
+                    )
+                    continue
+
                 # Find active tenant account by phone_number_id (ignore disconnected accounts)
                 result = (
                     supabase.table("whatsapp_accounts")
@@ -140,6 +149,45 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
     # Always return 200 — Meta retries if it doesn't get 200
     return Response(status_code=200)
+
+
+def _is_asistpro_phone_number(phone_number_id: str) -> bool:
+    return phone_number_id in set(settings.ASISTPRO_PHONE_NUMBER_IDS or [])
+
+
+async def _forward_asistpro_messages(
+    http_client: httpx.AsyncClient,
+    *,
+    raw_payload: dict,
+    phone_number_id: str,
+    messages: list[dict],
+) -> None:
+    if not settings.ASISTPRO_N8N_WEBHOOK_URL:
+        logger.warning("Asistpro phone configured but ASISTPRO_N8N_WEBHOOK_URL is empty")
+        return
+
+    headers = {}
+    if settings.ASISTPRO_WEBHOOK_SECRET:
+        headers["X-Asistpro-Webhook-Secret"] = settings.ASISTPRO_WEBHOOK_SECRET
+
+    for msg in messages:
+        content, media = _extract_message_content_and_media(msg)
+        response = await http_client.post(
+            settings.ASISTPRO_N8N_WEBHOOK_URL,
+            json={
+                "source": "whatsapp_cloud",
+                "app": "asistpro",
+                "phone_number_id": phone_number_id,
+                "from": normalize_phone(msg.get("from")) or msg.get("from"),
+                "message_id": msg.get("id"),
+                "message_type": msg.get("type", "text"),
+                "text": content,
+                "media": media,
+                "raw_meta_payload": raw_payload,
+            },
+            headers=headers,
+        )
+        response.raise_for_status()
 
 
 def _extract_message_content_and_media(msg: dict) -> tuple[str | None, list[dict]]:
