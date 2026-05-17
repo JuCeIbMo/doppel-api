@@ -592,6 +592,47 @@ class MVPApiTests(unittest.TestCase):
         self.assertEqual(fake_store["messages"], [])
         nanobot_response.assert_not_awaited()
 
+    def test_webhook_logs_whatsapp_status_updates(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {"phone_number_id": "phone-asistpro"},
+                                "statuses": [
+                                    {
+                                        "id": "wamid-out-text",
+                                        "status": "failed",
+                                        "recipient_id": "59170000009",
+                                        "errors": [{"code": 131047, "message": "Re-engagement message"}],
+                                    }
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        with (
+            patch("app.routers.webhook.get_supabase", return_value=FakeSupabase({})),
+            patch("app.routers.webhook.verify_webhook_signature", return_value=True),
+            self.assertLogs("doppel.webhook", level="INFO") as logs,
+        ):
+            response = self.client.post(
+                "/webhook/whatsapp",
+                content=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        log_output = "\n".join(logs.output)
+        self.assertIn("WhatsApp status phone_id=phone-asistpro", log_output)
+        self.assertIn("message_id=wamid-out-text", log_output)
+        self.assertIn("status=failed", log_output)
+        self.assertIn("error_code=131047", log_output)
+
     def test_asistpro_send_text_endpoint_uses_connected_meta_account(self):
         fake_store = {
             "whatsapp_accounts": [

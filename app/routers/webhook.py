@@ -52,6 +52,10 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                 metadata = value.get("metadata", {})
                 phone_number_id = metadata.get("phone_number_id")
                 messages = value.get("messages", [])
+                statuses = value.get("statuses", [])
+
+                if phone_number_id and statuses:
+                    _log_whatsapp_statuses(phone_number_id, statuses)
 
                 if not phone_number_id or not messages:
                     continue
@@ -153,6 +157,21 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
 def _is_asistpro_phone_number(phone_number_id: str) -> bool:
     return phone_number_id in set(settings.ASISTPRO_PHONE_NUMBER_IDS or [])
+
+
+def _log_whatsapp_statuses(phone_number_id: str, statuses: list[dict]) -> None:
+    for status_event in statuses:
+        errors = status_event.get("errors") or []
+        error = errors[0] if errors else {}
+        logger.info(
+            "WhatsApp status phone_id=%s message_id=%s recipient=%s status=%s error_code=%s error_message=%s",
+            phone_number_id,
+            status_event.get("id"),
+            status_event.get("recipient_id"),
+            status_event.get("status"),
+            error.get("code"),
+            error.get("message") or error.get("title"),
+        )
 
 
 async def _forward_asistpro_messages(
