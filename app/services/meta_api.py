@@ -149,6 +149,21 @@ async def subscribe_app_to_waba(
     )
 
 
+async def unsubscribe_app_from_waba(
+    client: httpx.AsyncClient,
+    waba_id: str,
+    token: str,
+    api_version: str,
+) -> None:
+    """Unsubscribe the app from a WABA to stop webhook delivery."""
+    await _request_with_retry(
+        client,
+        "DELETE",
+        f"https://graph.facebook.com/{api_version}/{waba_id}/subscribed_apps",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
 async def get_waba_phone_numbers(
     client: httpx.AsyncClient,
     waba_id: str,

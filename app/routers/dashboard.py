@@ -1,7 +1,9 @@
 import logging
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 
+from app.config import settings
 from app.dependencies import get_current_tenant
 from app.models.schemas import (
     AdminPhonesResponse,
@@ -19,6 +21,8 @@ from app.models.schemas import (
     TenantResponse,
     WhatsAppAccountResponse,
 )
+from app.security import decrypt_token
+from app.services import meta_api
 from app.services.manager_tools import normalize_phone
 from app.services.supabase_client import get_supabase
 
@@ -155,11 +159,11 @@ async def get_messages(
 
 
 @router.delete("/whatsapp", status_code=status.HTTP_200_OK)
-async def disconnect_whatsapp(tenant: dict = Depends(get_current_tenant)):
+async def disconnect_whatsapp(request: Request, tenant: dict = Depends(get_current_tenant)):
     supabase = get_supabase()
     connected = (
         supabase.table("whatsapp_accounts")
-        .select("id")
+        .select("id, waba_id, access_token_encrypted")
         .eq("tenant_id", tenant["id"])
         .eq("status", "connected")
         .execute()
@@ -167,11 +171,58 @@ async def disconnect_whatsapp(tenant: dict = Depends(get_current_tenant)):
     if not connected.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No tienes una cuenta de WhatsApp conectada.")
 
+    disconnected_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    connected_accounts = connected.data
+    waba_ids = {row["waba_id"] for row in connected_accounts if row.get("waba_id")}
+    http_client = request.app.state.http_client
+
+    for waba_id in waba_ids:
+        active_waba_accounts = (
+            supabase.table("whatsapp_accounts")
+            .select("id, tenant_id, access_token_encrypted")
+            .eq("waba_id", waba_id)
+            .eq("status", "connected")
+            .execute()
+        )
+        active_rows = active_waba_accounts.data or []
+        tenant_rows = [row for row in connected_accounts if row.get("waba_id") == waba_id]
+        if len(active_rows) > len(tenant_rows):
+            logger.info(
+                "Skipping Meta unsubscribe for waba_id=%s because other active numbers still exist",
+                waba_id,
+            )
+            continue
+
+        token_encrypted = next(
+            (row.get("access_token_encrypted") for row in tenant_rows if row.get("access_token_encrypted")),
+            "",
+        )
+        if not token_encrypted:
+            logger.info("Skipping Meta unsubscribe for waba_id=%s because no tenant token is available", waba_id)
+            continue
+
+        try:
+            access_token = decrypt_token(token_encrypted, settings.ENCRYPTION_KEY)
+            await meta_api.unsubscribe_app_from_waba(
+                http_client,
+                waba_id,
+                access_token,
+                settings.META_API_VERSION,
+            )
+            logger.info("Meta app unsubscribed from WABA waba_id=%s tenant_id=%s", waba_id, tenant["id"])
+        except Exception:
+            logger.exception(
+                "Failed to unsubscribe Meta app from WABA during offboarding waba_id=%s tenant_id=%s",
+                waba_id,
+                tenant["id"],
+            )
+
     supabase.table("whatsapp_accounts").update({
         "status": "disconnected",
         "webhook_active": False,
         "access_token_encrypted": "",
-    }).eq("tenant_id", tenant["id"]).execute()
+        "deleted_at": disconnected_at,
+    }).eq("tenant_id", tenant["id"]).eq("status", "connected").execute()
 
     supabase.table("bot_configs").update({
         "bot_enabled": False,

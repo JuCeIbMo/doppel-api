@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -58,6 +59,10 @@ class FakeTableQuery:
         return self
 
     def single(self):
+        self._single = True
+        return self
+
+    def maybe_single(self):
         self._single = True
         return self
 
@@ -347,6 +352,41 @@ class MVPApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(fake_store["messages"]), 1)
+
+    def test_webhook_ignores_unregistered_phone_number_id(self):
+        payload = {
+            "entry": [
+                {
+                    "changes": [
+                        {
+                            "value": {
+                                "metadata": {"phone_number_id": "phone-missing"},
+                                "messages": [
+                                    {"id": "wamid-missing-1", "from": "59170000003", "type": "text", "text": {"body": "Hola"}}
+                                ],
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+        fake_store = {"whatsapp_accounts": [], "messages": []}
+        fake_supabase = FakeSupabase(fake_store)
+
+        with (
+            patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
+            patch("app.routers.webhook.verify_webhook_signature", return_value=True),
+            self.assertLogs("doppel.webhook", level="INFO") as logs,
+        ):
+            response = self.client.post(
+                "/webhook/whatsapp",
+                content=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(fake_store["messages"], [])
+        self.assertIn("phone_number_id no registrado", "\n".join(logs.output))
 
     def test_webhook_routes_admin_phone_to_nanobot_manager(self):
         payload = {
@@ -661,6 +701,82 @@ class MVPApiTests(unittest.TestCase):
         self.assertIn("message_id=wamid-out-text", log_output)
         self.assertIn("status=failed", log_output)
         self.assertIn("error_code=131047", log_output)
+
+    def test_disconnect_whatsapp_soft_deletes_and_unsubscribes_last_waba(self):
+        fake_store = {
+            "tenants": [{"id": "tenant-1"}],
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "tenant_id": "tenant-1",
+                    "waba_id": "waba-1",
+                    "phone_number_id": "phone-1",
+                    "status": "connected",
+                    "webhook_active": True,
+                    "access_token_encrypted": "encrypted-1",
+                }
+            ],
+            "bot_configs": [{"tenant_id": "tenant-1", "bot_enabled": True}],
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        app.dependency_overrides[get_current_tenant] = lambda: fake_store["tenants"][0]
+
+        with (
+            patch("app.routers.dashboard.get_supabase", return_value=fake_supabase),
+            patch("app.routers.dashboard.decrypt_token", return_value="meta-token"),
+            patch("app.routers.dashboard.meta_api.unsubscribe_app_from_waba", AsyncMock(return_value=None)) as unsubscribe,
+        ):
+            response = self.client.delete("/me/whatsapp")
+
+        self.assertEqual(response.status_code, 200)
+        unsubscribe.assert_awaited_once()
+        self.assertEqual(unsubscribe.await_args.args[1], "waba-1")
+        self.assertEqual(unsubscribe.await_args.args[2], "meta-token")
+        account = fake_store["whatsapp_accounts"][0]
+        self.assertEqual(account["status"], "disconnected")
+        self.assertEqual(account["webhook_active"], False)
+        self.assertEqual(account["access_token_encrypted"], "")
+        self.assertIsNotNone(account.get("deleted_at"))
+        datetime.fromisoformat(account["deleted_at"].replace("Z", "+00:00"))
+        self.assertEqual(fake_store["bot_configs"][0]["bot_enabled"], False)
+
+    def test_disconnect_whatsapp_skips_unsubscribe_when_waba_has_other_active_numbers(self):
+        fake_store = {
+            "tenants": [{"id": "tenant-1"}],
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "tenant_id": "tenant-1",
+                    "waba_id": "waba-1",
+                    "phone_number_id": "phone-1",
+                    "status": "connected",
+                    "webhook_active": True,
+                    "access_token_encrypted": "encrypted-1",
+                },
+                {
+                    "id": "wa-2",
+                    "tenant_id": "tenant-2",
+                    "waba_id": "waba-1",
+                    "phone_number_id": "phone-2",
+                    "status": "connected",
+                    "webhook_active": True,
+                    "access_token_encrypted": "encrypted-2",
+                },
+            ],
+            "bot_configs": [{"tenant_id": "tenant-1", "bot_enabled": True}],
+        }
+        fake_supabase = FakeSupabase(fake_store)
+        app.dependency_overrides[get_current_tenant] = lambda: fake_store["tenants"][0]
+
+        with (
+            patch("app.routers.dashboard.get_supabase", return_value=fake_supabase),
+            patch("app.routers.dashboard.decrypt_token", return_value="meta-token"),
+            patch("app.routers.dashboard.meta_api.unsubscribe_app_from_waba", AsyncMock(return_value=None)) as unsubscribe,
+        ):
+            response = self.client.delete("/me/whatsapp")
+
+        self.assertEqual(response.status_code, 200)
+        unsubscribe.assert_not_awaited()
 
     def test_internal_tools_list_returns_mode_specific_definitions(self):
         fake_supabase = FakeSupabase({})

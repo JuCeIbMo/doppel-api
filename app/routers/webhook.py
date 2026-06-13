@@ -75,12 +75,15 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     .select("id, tenant_id")
                     .eq("phone_number_id", phone_number_id)
                     .eq("status", "connected")
-                    .single()
+                    .maybe_single()
                     .execute()
                 )
-                account = result.data
+                account = None if result is None else result.data
                 if not account:
-                    logger.warning("No active account found for phone_number_id=%s", phone_number_id)
+                    logger.info(
+                        "Webhook de phone_number_id no registrado, ignorando phone_number_id=%s",
+                        phone_number_id,
+                    )
                     continue
 
                 config_result = (
