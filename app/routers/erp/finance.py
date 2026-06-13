@@ -74,4 +74,16 @@ async def cashflow(
     today = date.today()
     date_from = date_from or today.replace(day=1).isoformat()
     date_to = date_to or today.isoformat()
-    return await service.cashflow(ctx, date_from=date_from, date_to=date_to, group_by=group_by)
+    result = await service.cashflow(ctx, date_from=date_from, date_to=date_to, group_by=group_by)
+    # Frontend chart contract: a flat `items` array with a per-bucket `net`. Existing
+    # top-level totals/series are kept (harmless) so nothing else that read them breaks.
+    result["items"] = [
+        {
+            "label": s["period"],
+            "income": s["income"],
+            "expense": s["expense"],
+            "net": round(s["income"] - s["expense"], 2),
+        }
+        for s in result["series"]
+    ]
+    return result

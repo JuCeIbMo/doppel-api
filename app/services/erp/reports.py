@@ -144,7 +144,13 @@ class ReportsService:
             d["margin_pct"] = round((d["margin"] / d["revenue"] * 100) if d["revenue"] else 0, 1)
             return d
 
+        gross_margin = round(sum(_margin_of(i) for i in items), 2)
+        revenue = sum(float(i["total"]) for i in items)
+        gross_margin_pct = round((gross_margin / revenue * 100) if revenue else 0, 1)
+
         return {
+            "gross_margin": gross_margin,
+            "gross_margin_pct": gross_margin_pct,
             "by_product": [finalize(p) for p in sorted(by_product.values(), key=lambda x: x["margin"], reverse=True)],
             "by_category": [finalize({"category": k, **v}) for k, v in by_category.items()],
         }
@@ -165,6 +171,18 @@ class ReportsService:
         for s in sales:
             if s.get("client_id"):
                 spend[s["client_id"]] += float(s["total"])
+
+        # Returning = bought in-period AND has at least one completed sale before the period.
+        returning_clients = 0
+        if spend:
+            prior = (
+                get_supabase().table("sales").select("client_id")
+                .eq("tenant_id", ctx.tenant_id).eq("status", "completed")
+                .in_("client_id", list(spend.keys()))
+                .lt("created_at", date_from).execute()
+            ).data or []
+            returning_clients = len({r["client_id"] for r in prior if r.get("client_id")})
+
         top_ids = sorted(spend.items(), key=lambda kv: kv[1], reverse=True)[:5]
         top = []
         if top_ids:
@@ -178,6 +196,7 @@ class ReportsService:
         return {
             "period": {"from": date_from, "to": date_to},
             "new_clients": new_clients,
+            "returning_clients": returning_clients,
             "buyers": len(spend),
             "top_clients": top,
         }

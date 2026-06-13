@@ -159,6 +159,19 @@ class ClientResponse(BaseModel):
     created_at: str | None = None
 
 
+class ClientRecentSale(BaseModel):
+    id: str
+    total: float
+    status: str
+    created_at: str
+
+
+class ClientDetailResponse(ClientResponse):
+    """GET /erp/clients/{id}: the client plus their last sales (ClientsService.get)."""
+
+    recent_sales: list[ClientRecentSale] = Field(default_factory=list)
+
+
 # --- Sales -------------------------------------------------------------------
 class SaleItemInput(BaseModel):
     product_id: str

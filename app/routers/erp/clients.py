@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from app.models.erp_schemas import ClientCreate, ClientResponse, ClientUpdate
+from app.models.erp_schemas import (
+    ClientCreate,
+    ClientDetailResponse,
+    ClientResponse,
+    ClientUpdate,
+)
 from app.services.erp.clients import ClientsService
 from app.services.erp.context import ERPContext, get_erp_context
 
@@ -38,7 +43,7 @@ async def get_by_whatsapp(wa_id: str, ctx: ERPContext = Depends(get_erp_context)
     return await service.get_by_whatsapp(ctx, wa_id)
 
 
-@router.get("/{client_id}")
+@router.get("/{client_id}", response_model=ClientDetailResponse)
 async def get_client(client_id: str, ctx: ERPContext = Depends(get_erp_context)):
     return await service.get(ctx, client_id)
 

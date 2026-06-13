@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import io
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.services.erp.context import ERPContext, get_erp_context
-from app.services.erp.export import ExportService
+from app.services.erp.export import ExportService, serialize
 
 router = APIRouter()
 service = ExportService()
 
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+_MEDIA = {"csv": "text/csv", "xlsx": _XLSX}
 
 
 def _download(data: bytes, filename: str, media_type: str) -> StreamingResponse:
@@ -24,20 +25,29 @@ def _download(data: bytes, filename: str, media_type: str) -> StreamingResponse:
     )
 
 
+def _tabular(table, name: str, fmt: str) -> StreamingResponse:
+    """Serialize a (title, headers, rows) table and stream it as csv (default) or xlsx."""
+    return _download(serialize(table, fmt), f"{name}.{fmt}", _MEDIA[fmt])
+
+
 @router.get("/sales")
 async def export_sales(
     ctx: ERPContext = Depends(get_erp_context),
     date_from: str | None = None,
     date_to: str | None = None,
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
 ):
-    data = await service.sales_xlsx(ctx, date_from=date_from, date_to=date_to)
-    return _download(data, "ventas.xlsx", _XLSX)
+    table = await service.sales_table(ctx, date_from=date_from, date_to=date_to)
+    return _tabular(table, "ventas", format)
 
 
 @router.get("/inventory")
-async def export_inventory(ctx: ERPContext = Depends(get_erp_context)):
-    data = await service.inventory_xlsx(ctx)
-    return _download(data, "inventario.xlsx", _XLSX)
+async def export_inventory(
+    ctx: ERPContext = Depends(get_erp_context),
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
+):
+    table = await service.inventory_table(ctx)
+    return _tabular(table, "inventario", format)
 
 
 @router.get("/transactions")
@@ -45,9 +55,10 @@ async def export_transactions(
     ctx: ERPContext = Depends(get_erp_context),
     date_from: str | None = None,
     date_to: str | None = None,
+    format: str = Query("csv", pattern="^(csv|xlsx)$"),
 ):
-    data = await service.transactions_xlsx(ctx, date_from=date_from, date_to=date_to)
-    return _download(data, "transacciones.xlsx", _XLSX)
+    table = await service.transactions_table(ctx, date_from=date_from, date_to=date_to)
+    return _tabular(table, "transacciones", format)
 
 
 @router.get("/report/pdf")

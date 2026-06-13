@@ -6,6 +6,7 @@ and the rest of the app doesn't pay for them at startup.
 
 from __future__ import annotations
 
+import csv
 import io
 
 from app.services.erp.context import ERPContext
@@ -30,13 +31,29 @@ def _xlsx(title: str, headers: list[str], rows: list[list]) -> bytes:
     return buf.getvalue()
 
 
+def _csv(title: str, headers: list[str], rows: list[list]) -> bytes:
+    # utf-8-sig so Excel opens accented text (á, ñ, ó…) correctly when double-clicking the file.
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(headers)
+    writer.writerows(rows)
+    return buf.getvalue().encode("utf-8-sig")
+
+
+def serialize(table: tuple[str, list[str], list[list]], fmt: str) -> bytes:
+    """Serialize a (title, headers, rows) table to the requested format."""
+    title, headers, rows = table
+    return _csv(title, headers, rows) if fmt == "csv" else _xlsx(title, headers, rows)
+
+
 class ExportService:
     def __init__(self) -> None:
         self.inventory = InventoryService()
         self.reports = ReportsService()
         self.finance = FinanceService()
 
-    async def sales_xlsx(self, ctx: ERPContext, *, date_from: str | None, date_to: str | None) -> bytes:
+    async def sales_table(self, ctx: ERPContext, *, date_from: str | None,
+                          date_to: str | None) -> tuple[str, list[str], list[list]]:
         f, t = default_period(date_from, date_to)
         rows = (
             get_supabase().table("sales")
@@ -44,26 +61,27 @@ class ExportService:
             .eq("tenant_id", ctx.tenant_id).gte("created_at", f).lte("created_at", f"{t}T23:59:59")
             .order("created_at", desc=True).execute()
         ).data or []
-        return _xlsx(
+        return (
             "Ventas",
             ["ID", "Estado", "Pago", "Subtotal", "Descuento", "Total", "Actor", "Fecha"],
             [[r["id"], r["status"], r["payment_method"], r["subtotal"], r["discount"],
               r["total"], r["actor"], r["created_at"]] for r in rows],
         )
 
-    async def inventory_xlsx(self, ctx: ERPContext) -> bytes:
+    async def inventory_table(self, ctx: ERPContext) -> tuple[str, list[str], list[list]]:
         rows = await self.inventory.list_stock(ctx, limit=10000)
-        return _xlsx(
+        return (
             "Inventario",
             ["Producto", "Categoría", "Unidad", "Stock", "Umbral bajo"],
             [[r["product_name"], r.get("category") or "", r["unit"], r["quantity"],
               r["low_stock_threshold"]] for r in rows],
         )
 
-    async def transactions_xlsx(self, ctx: ERPContext, *, date_from: str | None, date_to: str | None) -> bytes:
+    async def transactions_table(self, ctx: ERPContext, *, date_from: str | None,
+                                 date_to: str | None) -> tuple[str, list[str], list[list]]:
         f, t = default_period(date_from, date_to)
         rows = await self.finance.list_transactions(ctx, date_from=f, date_to=t, limit=10000)
-        return _xlsx(
+        return (
             "Transacciones",
             ["Tipo", "Monto", "Categoría", "Descripción", "Fecha", "Actor"],
             [[r["type"], r["amount"], r["category"], r.get("description") or "",
