@@ -2,7 +2,7 @@ import base64
 import json
 
 from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.security import validate_fernet_key
 
@@ -65,12 +65,17 @@ class Settings(BaseSettings):
     @field_validator("ALLOWED_ORIGINS", "ASISTPRO_PHONE_NUMBER_IDS", mode="before")
     @classmethod
     def _parse_list_setting(cls, v):
+        if isinstance(v, list):
+            return v
         if isinstance(v, str):
             raw = v.strip()
             if not raw:
                 return []
             if raw.startswith("["):
-                return json.loads(raw)
+                try:
+                    return json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise ValueError("Invalid JSON list value") from exc
             return [item.strip() for item in raw.split(",") if item.strip()]
         return v
 
@@ -97,7 +102,11 @@ class Settings(BaseSettings):
             )
         return v
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        enable_decoding=False,
+    )
 
     @property
     def NANOBOT_RUNTIME_URL(self) -> str:
