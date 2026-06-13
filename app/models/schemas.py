@@ -161,3 +161,43 @@ class ProductUpdateRequest(BaseModel):
     description: str | None = Field(None, max_length=2000)
     price: float | None = Field(None, ge=0)
     available: bool | None = None
+
+
+# Internal AI runtime
+
+
+class ConversationMessage(BaseModel):
+    role: str
+    content: str
+
+
+class AiCoreTurnResponse(BaseModel):
+    reply: str = ""
+    stop_reason: str = "completed"
+    tools_used: list[str] = Field(default_factory=list)
+    usage: dict[str, int] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class InternalToolDefinition(BaseModel):
+    name: str
+    description: str
+    input_schema: dict
+    read_only: bool = False
+
+
+class InternalToolListResponse(BaseModel):
+    tools: list[InternalToolDefinition]
+
+
+class InternalToolExecuteRequest(BaseModel):
+    tenant_id: str
+    mode: str
+    tool_name: str
+    arguments: dict = Field(default_factory=dict)
+
+
+class InternalToolExecuteResponse(BaseModel):
+    ok: bool
+    result: dict | list | str | None = None
+    error: str | None = None

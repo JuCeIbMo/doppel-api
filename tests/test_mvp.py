@@ -84,6 +84,7 @@ class FakeTableQuery:
         if self._insert_payload is not None:
             payload = dict(self._insert_payload)
             payload.setdefault("id", f"{self.table_name}-{len(table) + 1}")
+            payload.setdefault("created_at", f"9999-12-31T23:59:{len(table) + 1:02d}Z")
             table.append(payload)
             return FakeResult([payload])
 
@@ -385,13 +386,13 @@ class MVPApiTests(unittest.TestCase):
             "messages": [],
         }
         fake_supabase = FakeSupabase(fake_store)
-        nanobot_response = AsyncMock(return_value={"reply": "Listo", "mode": "manager"})
+        ai_core_response = AsyncMock(return_value={"reply": "Listo", "mode": "manager"})
 
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
-            patch("app.routers.webhook.settings.NANOBOT_RUNTIME_URL", "http://nanobot"),
-            patch("app.routers.webhook.nanobot_runtime.respond", nanobot_response),
+            patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
+            patch("app.routers.webhook.ai_core_runtime.respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-1")),
         ):
@@ -402,13 +403,13 @@ class MVPApiTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        nanobot_response.assert_awaited_once()
-        self.assertEqual(nanobot_response.await_args.kwargs["mode"], "manager")
-        self.assertNotIn("model", nanobot_response.await_args.kwargs)
+        ai_core_response.assert_awaited_once()
+        self.assertEqual(ai_core_response.await_args.kwargs["mode"], "manager")
+        self.assertEqual(ai_core_response.await_args.kwargs["model"], "claude-test")
         self.assertEqual(fake_store["messages"][0]["agent_mode"], "manager")
         self.assertEqual(fake_store["messages"][1]["content"], "Listo")
 
-    def test_webhook_routes_regular_phone_to_nanobot_client(self):
+    def test_webhook_routes_regular_phone_to_ai_core_client_with_context(self):
         payload = {
             "entry": [
                 {
@@ -440,19 +441,38 @@ class MVPApiTests(unittest.TestCase):
                     "tenant_id": "tenant-1",
                     "admin_phones": ["59170000001"],
                     "bot_enabled": True,
+                    "system_prompt": "Eres el bot cliente",
+                    "manager_prompt": "Eres el manager agent",
                     "ai_model": "claude-test",
                 }
             ],
-            "messages": [],
+            "messages": [
+                {
+                    "id": "old-1",
+                    "tenant_id": "tenant-1",
+                    "user_phone": "59170000002",
+                    "direction": "inbound",
+                    "content": "Hola",
+                    "created_at": "2026-06-11T07:50:00Z",
+                },
+                {
+                    "id": "old-2",
+                    "tenant_id": "tenant-1",
+                    "user_phone": "59170000002",
+                    "direction": "outbound",
+                    "content": "Hola, en que ayudo?",
+                    "created_at": "2026-06-11T07:51:00Z",
+                },
+            ],
         }
         fake_supabase = FakeSupabase(fake_store)
-        nanobot_response = AsyncMock(return_value={"reply": "Cuesta 10", "mode": "client"})
+        ai_core_response = AsyncMock(return_value={"reply": "Cuesta 10", "mode": "client"})
 
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
-            patch("app.routers.webhook.settings.NANOBOT_RUNTIME_URL", "http://nanobot"),
-            patch("app.routers.webhook.nanobot_runtime.respond", nanobot_response),
+            patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
+            patch("app.routers.webhook.ai_core_runtime.respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-2")),
         ):
@@ -463,11 +483,20 @@ class MVPApiTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        nanobot_response.assert_awaited_once()
-        self.assertEqual(nanobot_response.await_args.kwargs["mode"], "client")
-        self.assertEqual(fake_store["messages"][0]["agent_mode"], "client")
+        ai_core_response.assert_awaited_once()
+        self.assertEqual(ai_core_response.await_args.kwargs["mode"], "client")
+        self.assertEqual(ai_core_response.await_args.kwargs["system_prompt"], "Eres el bot cliente")
+        self.assertEqual(
+            ai_core_response.await_args.kwargs["conversation"],
+            [
+                {"role": "user", "content": "Hola"},
+                {"role": "assistant", "content": "Hola, en que ayudo?"},
+                {"role": "user", "content": "Precio?"},
+            ],
+        )
+        self.assertEqual(fake_store["messages"][2]["agent_mode"], "client")
 
-    def test_webhook_downloads_media_before_calling_nanobot(self):
+    def test_webhook_downloads_media_before_calling_ai_core(self):
         payload = {
             "entry": [
                 {
@@ -514,7 +543,7 @@ class MVPApiTests(unittest.TestCase):
             "messages": [],
         }
         fake_supabase = FakeSupabase(fake_store)
-        nanobot_response = AsyncMock(return_value={"reply": "Veo la imagen", "mode": "client"})
+        ai_core_response = AsyncMock(return_value={"reply": "Veo la imagen", "mode": "client"})
         download_media = AsyncMock(return_value={
             "path": "C:/tmp/media-1.jpg",
             "mime_type": "image/jpeg",
@@ -524,8 +553,8 @@ class MVPApiTests(unittest.TestCase):
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
-            patch("app.routers.webhook.settings.NANOBOT_RUNTIME_URL", "http://nanobot"),
-            patch("app.routers.webhook.nanobot_runtime.respond", nanobot_response),
+            patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
+            patch("app.routers.webhook.ai_core_runtime.respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.download_media_to_path", download_media),
             patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-3")),
@@ -539,8 +568,8 @@ class MVPApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(fake_store["messages"][0]["media"][0]["id"], "media-1")
         download_media.assert_awaited_once()
-        self.assertEqual(nanobot_response.await_args.kwargs["content"], "Mira esto")
-        self.assertEqual(nanobot_response.await_args.kwargs["media_paths"], ["C:/tmp/media-1.jpg"])
+        self.assertEqual(ai_core_response.await_args.kwargs["content"], "Mira esto")
+        self.assertEqual(ai_core_response.await_args.kwargs["media_paths"], ["C:/tmp/media-1.jpg"])
 
     def test_webhook_routes_configured_phone_number_to_asistpro_n8n(self):
         payload = {
@@ -572,7 +601,7 @@ class MVPApiTests(unittest.TestCase):
             patch("app.routers.webhook.settings.ASISTPRO_PHONE_NUMBER_IDS", ["phone-asistpro"], create=True),
             patch("app.routers.webhook.settings.ASISTPRO_N8N_WEBHOOK_URL", "https://n8n.example/webhook", create=True),
             patch("app.routers.webhook.settings.ASISTPRO_WEBHOOK_SECRET", "shared-secret", create=True),
-            patch("app.routers.webhook.nanobot_runtime.respond", AsyncMock()) as nanobot_response,
+            patch("app.routers.webhook.ai_core_runtime.respond", AsyncMock()) as ai_core_response,
         ):
             response = self.client.post(
                 "/webhook/whatsapp",
@@ -590,7 +619,7 @@ class MVPApiTests(unittest.TestCase):
         self.assertEqual(forwarded["text"], "Hola Asistpro")
         self.assertEqual(http_client.post.await_args.kwargs["headers"]["X-Asistpro-Webhook-Secret"], "shared-secret")
         self.assertEqual(fake_store["messages"], [])
-        nanobot_response.assert_not_awaited()
+        ai_core_response.assert_not_awaited()
 
     def test_webhook_logs_whatsapp_status_updates(self):
         payload = {
@@ -632,6 +661,58 @@ class MVPApiTests(unittest.TestCase):
         self.assertIn("message_id=wamid-out-text", log_output)
         self.assertIn("status=failed", log_output)
         self.assertIn("error_code=131047", log_output)
+
+    def test_internal_tools_list_returns_mode_specific_definitions(self):
+        fake_supabase = FakeSupabase({})
+
+        with (
+            patch("app.routers.internal.get_supabase", return_value=fake_supabase),
+            patch("app.dependencies.settings.DOPPEL_INTERNAL_API_TOKEN", "internal-secret"),
+        ):
+            response = self.client.get(
+                "/internal/ai/tools",
+                params={"tenant_id": "tenant-1", "mode": "client"},
+                headers={"Authorization": "Bearer internal-secret"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        names = {tool["name"] for tool in response.json()["tools"]}
+        self.assertEqual(names, {"lookup_business_info", "list_available_products"})
+
+    def test_internal_tools_execute_runs_requested_tool(self):
+        fake_store = {
+            "products": [
+                {
+                    "id": "prod-1",
+                    "tenant_id": "tenant-1",
+                    "name": "Pizza",
+                    "description": "Grande",
+                    "price": 50,
+                    "available": True,
+                }
+            ]
+        }
+        fake_supabase = FakeSupabase(fake_store)
+
+        with (
+            patch("app.routers.internal.get_supabase", return_value=fake_supabase),
+            patch("app.dependencies.settings.DOPPEL_INTERNAL_API_TOKEN", "internal-secret"),
+        ):
+            response = self.client.post(
+                "/internal/ai/tools/execute",
+                headers={"Authorization": "Bearer internal-secret"},
+                json={
+                    "tenant_id": "tenant-1",
+                    "mode": "client",
+                    "tool_name": "list_available_products",
+                    "arguments": {},
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["result"][0]["name"], "Pizza")
 
     def test_asistpro_send_text_endpoint_uses_connected_meta_account(self):
         fake_store = {

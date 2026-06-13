@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse, Response
 
 from app.config import settings
 from app.security import decrypt_token, verify_webhook_signature
-from app.services import meta_api, nanobot_runtime
+from app.services import ai_core_runtime, meta_api
 from app.services.manager_tools import normalize_phone
 from app.services.supabase_client import get_supabase
 
@@ -130,11 +130,11 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                         user_phone, phone_number_id, msg_type,
                     )
 
-                    should_process = bool(settings.NANOBOT_RUNTIME_URL and (content or media))
+                    should_process = bool(settings.AI_CORE_URL and (content or media))
                     if mode == "client" and not config.get("bot_enabled", True):
                         should_process = False
 
-                    # Schedule bot response through nanobot. Manager bypasses bot_enabled.
+                    # Schedule bot response through ai-core. Manager bypasses bot_enabled.
                     if should_process:
                         background_tasks.add_task(
                             _process_bot_response,
@@ -301,7 +301,7 @@ async def _process_bot_response(
         # Get bot config (incl. manager fields added in migration_v4)
         config_result = (
             supabase.table("bot_configs")
-            .select("bot_enabled, admin_phones")
+            .select("bot_enabled, admin_phones, system_prompt, manager_prompt, ai_model")
             .eq("tenant_id", tenant_id)
             .single()
             .execute()
@@ -339,7 +339,15 @@ async def _process_bot_response(
             media=media,
         )
 
-        result = await nanobot_runtime.respond(
+        conversation = _load_conversation_context(
+            supabase,
+            tenant_id=tenant_id,
+            user_phone=user_phone,
+            limit=settings.AI_CONTEXT_MESSAGES,
+        )
+        system_prompt = _select_system_prompt(config=config, mode=mode)
+
+        result = await ai_core_runtime.respond(
             http_client,
             tenant_id=tenant_id,
             mode=mode,
@@ -347,6 +355,9 @@ async def _process_bot_response(
             chat_id=user_phone,
             message_id=inbound_message_id,
             content=inbound_text,
+            system_prompt=system_prompt,
+            model=str(config.get("ai_model") or "claude-sonnet-4-20250514"),
+            conversation=conversation,
             media_paths=media_paths,
         )
         ai_text = str(result.get("reply") or "").strip()
@@ -383,3 +394,36 @@ async def _process_bot_response(
 
     except Exception:
         logger.exception("Bot response failed for tenant=%s phone=%s", tenant_id, user_phone)
+
+
+def _select_system_prompt(*, config: dict, mode: str) -> str:
+    if mode == "manager" and config.get("manager_prompt"):
+        return str(config["manager_prompt"])
+    return str(config.get("system_prompt") or "")
+
+
+def _load_conversation_context(
+    supabase,
+    *,
+    tenant_id: str,
+    user_phone: str,
+    limit: int,
+) -> list[dict[str, str]]:
+    result = (
+        supabase.table("messages")
+        .select("direction, content, created_at")
+        .eq("tenant_id", tenant_id)
+        .eq("user_phone", user_phone)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+
+    conversation: list[dict[str, str]] = []
+    for row in reversed(result.data or []):
+        content = str(row.get("content") or "").strip()
+        if not content:
+            continue
+        role = "assistant" if row.get("direction") == "outbound" else "user"
+        conversation.append({"role": role, "content": content})
+    return conversation

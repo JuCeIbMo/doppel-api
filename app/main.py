@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import asistpro, auth, dashboard, health, oauth, webhook
+from app.routers import asistpro, auth, dashboard, health, internal, oauth, webhook
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,3 +45,4 @@ app.include_router(dashboard.router)
 app.include_router(oauth.router)
 app.include_router(webhook.router)
 app.include_router(asistpro.router)
+app.include_router(internal.router)

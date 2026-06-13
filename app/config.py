@@ -36,10 +36,25 @@ class Settings(BaseSettings):
     META_API_RETRY_DELAY_MS: int = 300
     ANTHROPIC_API_RETRIES: int = 2
 
-    # Nanobot internal runtime. Empty URL disables agent responses.
-    NANOBOT_RUNTIME_URL: str = ""
-    NANOBOT_RUNTIME_TOKEN: str = ""
-    NANOBOT_RUNTIME_TIMEOUT_SECONDS: float = 120.0
+    # AI core internal runtime. Empty URL disables agent responses.
+    AI_CORE_URL: str = Field(
+        default="",
+        validation_alias=AliasChoices("AI_CORE_URL", "NANOBOT_RUNTIME_URL"),
+    )
+    AI_CORE_TOKEN: str = Field(
+        default="",
+        validation_alias=AliasChoices("AI_CORE_TOKEN", "NANOBOT_RUNTIME_TOKEN"),
+    )
+    AI_CORE_TIMEOUT_SECONDS: float = Field(
+        default=120.0,
+        validation_alias=AliasChoices(
+            "AI_CORE_TIMEOUT_SECONDS",
+            "NANOBOT_RUNTIME_TIMEOUT_SECONDS",
+        ),
+    )
+
+    # Token expected on Doppel internal endpoints used by ai-core.
+    DOPPEL_INTERNAL_API_TOKEN: str = ""
 
     # Asistpro WhatsApp gateway. Phone IDs listed here bypass Doppel agent flow.
     ASISTPRO_PHONE_NUMBER_IDS: list[str] = []
@@ -83,6 +98,18 @@ class Settings(BaseSettings):
         return v
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+
+    @property
+    def NANOBOT_RUNTIME_URL(self) -> str:
+        return self.AI_CORE_URL
+
+    @property
+    def NANOBOT_RUNTIME_TOKEN(self) -> str:
+        return self.AI_CORE_TOKEN
+
+    @property
+    def NANOBOT_RUNTIME_TIMEOUT_SECONDS(self) -> float:
+        return self.AI_CORE_TIMEOUT_SECONDS
 
 
 settings = Settings()
