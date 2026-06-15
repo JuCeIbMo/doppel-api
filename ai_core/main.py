@@ -47,7 +47,15 @@ app = FastAPI(
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "ai-core"}
+    # `runtime` + `echo` + `model` let you confirm WHICH image is live: if this
+    # endpoint lacks these fields, the container is running a stale build.
+    return {
+        "status": "ok",
+        "service": "ai-core",
+        "runtime": "agno-gemini",
+        "echo": settings.AI_CORE_ECHO,
+        "model": settings.AI_CORE_GEMINI_MODEL,
+    }
 
 
 @app.post("/internal/doppel/turn", response_model=TurnResponse)

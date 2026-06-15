@@ -148,6 +148,16 @@ class RespondTest(unittest.TestCase):
         self.assertEqual(captured["init"]["instructions"], "Sé amable")
 
 
+class HealthDiagnosticsTest(unittest.TestCase):
+    def test_health_reports_runtime_and_config(self):
+        with TestClient(ai_main.app) as client:
+            body = client.get("/health").json()
+        # 'runtime' marks the new Agno code; if missing, a stale image is running.
+        self.assertEqual(body["runtime"], "agno-gemini")
+        self.assertIn("echo", body)
+        self.assertIn("model", body)
+
+
 class EchoModeTest(unittest.TestCase):
     def test_echo_mode_returns_tenant_and_user_without_calling_model(self):
         def boom(*a, **k):
