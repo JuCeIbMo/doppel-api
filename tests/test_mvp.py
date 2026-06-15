@@ -3,7 +3,7 @@ import hmac
 import json
 import unittest
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -827,6 +827,27 @@ class MVPApiTests(unittest.TestCase):
         payload = response.json()
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["result"][0]["name"], "Pizza")
+
+    def test_all_tool_input_schemas_are_json_serializable(self):
+        """Every tool's input_schema must be pure JSON (no leftover Schema
+        objects), otherwise GET /internal/ai/tools returns 500 when ai-core
+        fetches the registry. Guards against the name-collision trap in
+        tool_parameters_schema (e.g. a property literally named 'description')."""
+        from app.services.tool_runtime import build_tool_registry
+
+        fake_supabase = MagicMock()
+        for mode in ("client", "manager"):
+            registry = build_tool_registry(
+                supabase=fake_supabase, tenant_id="tenant-1", mode=mode
+            )
+            for tool in registry._tools.values():
+                try:
+                    json.dumps(tool.parameters)
+                except TypeError as exc:
+                    self.fail(
+                        f"Tool '{tool.name}' ({mode}) input_schema not "
+                        f"JSON-serializable: {exc}"
+                    )
 
     def test_asistpro_send_text_endpoint_uses_connected_meta_account(self):
         fake_store = {

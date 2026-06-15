@@ -424,15 +424,21 @@ class ListProductsTool(_BotConfigTool):
         return result.data or []
 
 
+# NOTE: declared via ObjectSchema(properties=...) rather than
+# tool_parameters_schema(**properties) because one property is literally named
+# "description", which would otherwise collide with the reserved `description`
+# kwarg and leak a raw Schema object into the JSON (500 on /internal/ai/tools).
 @tool_parameters(
-    tool_parameters_schema(
-        name=StringSchema("Product name", min_length=1, max_length=200),
-        description=StringSchema("Optional product description", max_length=2000),
-        price=NumberSchema(description="Optional price (>= 0)", minimum=0, nullable=True),
-        available=BooleanSchema(description="Whether the product is available", default=True),
-        confirmed=BooleanSchema(default=False),
+    ObjectSchema(
+        properties={
+            "name": StringSchema("Product name", min_length=1, max_length=200),
+            "description": StringSchema("Optional product description", max_length=2000),
+            "price": NumberSchema(description="Optional price (>= 0)", minimum=0, nullable=True),
+            "available": BooleanSchema(description="Whether the product is available", default=True),
+            "confirmed": BooleanSchema(default=False),
+        },
         required=["name"],
-    )
+    ).to_json_schema()
 )
 class AddProductTool(_BotConfigTool):
     @property
