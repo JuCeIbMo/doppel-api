@@ -12,6 +12,7 @@ os.environ.setdefault("DOPPEL_INTERNAL_API_TOKEN", "test-internal-token")
 
 import asyncio
 import unittest
+from unittest.mock import patch
 
 import pytest
 
@@ -20,7 +21,8 @@ pytest.importorskip("agno")
 import httpx
 from agno.tools import Function
 
-from ai_core import doppel_tools
+from ai_core import doppel_tools, runtime
+from ai_core.contracts import TurnResponse
 
 
 def _transport() -> httpx.MockTransport:
@@ -68,3 +70,44 @@ class BuildRemoteToolsTest(unittest.TestCase):
 
         result = asyncio.run(run())
         self.assertEqual(result, [{"sku": "A1"}])
+
+
+class RespondTest(unittest.TestCase):
+    def test_respond_builds_session_and_returns_reply(self):
+        captured = {}
+
+        class FakeRun:
+            content = "Hola, soy el bot"
+            tools = []
+            metrics = None
+
+        class FakeAgent:
+            def __init__(self, **kwargs):
+                captured["init"] = kwargs
+
+            async def arun(self, content, **kwargs):
+                captured["arun"] = {"content": content, **kwargs}
+                return FakeRun()
+
+        async def run():
+            async with httpx.AsyncClient(
+                transport=_transport(), base_url="http://doppel-api:8000"
+            ) as client:
+                runtime.settings.DOPPEL_API_URL = "http://doppel-api:8000"
+                with patch.object(runtime, "Agent", FakeAgent):
+                    return await runtime.respond(
+                        client,
+                        tenant_id="t1",
+                        mode="client",
+                        sender_id="591700",
+                        content="hola",
+                        system_prompt="Sé amable",
+                        model="claude-sonnet-4",
+                        images=None,
+                    )
+
+        result = asyncio.run(run())
+        self.assertIsInstance(result, TurnResponse)
+        self.assertEqual(result.reply, "Hola, soy el bot")
+        self.assertEqual(captured["arun"]["session_id"], "tenant:t1:phone:591700")
+        self.assertEqual(captured["init"]["instructions"], "Sé amable")
