@@ -4,14 +4,23 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.config import settings
 from app.services.supabase_client import get_supabase, get_supabase_auth
 
-security = HTTPBearer()
+# auto_error=False so a *missing* or malformed Authorization header yields our own
+# 401 below (RFC 7235 semantics) instead of FastAPI's default 403. The front-end
+# refresh-and-retry flow keys off 401, so a 403 here would strand recoverable sessions.
+security = HTTPBearer(auto_error=False)
 internal_security = HTTPBearer()
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ):
     """Verify Bearer JWT token from Supabase Auth and return the user."""
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No autenticado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     token = credentials.credentials
     try:
         supabase = get_supabase_auth()
