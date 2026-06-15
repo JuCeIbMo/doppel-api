@@ -15,6 +15,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ai-core")
 
+# Bumped when ai-core code changes that must reach the deployed container.
+# Look for this line in the startup logs to confirm WHICH build is live.
+BUILD_MARKER = "schema-sanitizer+echo (2026-06-15)"
+
 
 def _require_internal_token(authorization: str | None) -> None:
     if not settings.AI_CORE_API_TOKEN:
@@ -31,7 +35,12 @@ def _require_internal_token(authorization: str | None) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=30.0)
-    logger.info("ai-core started")
+    logger.info(
+        "ai-core started · build=%s · echo=%s · model=%s",
+        BUILD_MARKER,
+        settings.AI_CORE_ECHO,
+        settings.AI_CORE_GEMINI_MODEL,
+    )
     yield
     await app.state.http_client.aclose()
     logger.info("ai-core stopped")
