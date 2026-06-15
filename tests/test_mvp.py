@@ -526,14 +526,12 @@ class MVPApiTests(unittest.TestCase):
         ai_core_response.assert_awaited_once()
         self.assertEqual(ai_core_response.await_args.kwargs["mode"], "client")
         self.assertEqual(ai_core_response.await_args.kwargs["system_prompt"], "Eres el bot cliente")
-        self.assertEqual(
-            ai_core_response.await_args.kwargs["conversation"],
-            [
-                {"role": "user", "content": "Hola"},
-                {"role": "assistant", "content": "Hola, en que ayudo?"},
-                {"role": "user", "content": "Precio?"},
-            ],
-        )
+        # El historial ahora lo administra Agno (en su Postgres) vía session_id;
+        # el API ya no envía la conversación. Supabase solo registra mensajes.
+        self.assertNotIn("conversation", ai_core_response.await_args.kwargs)
+        directions = [m["direction"] for m in fake_store["messages"]]
+        self.assertIn("inbound", directions)
+        self.assertIn("outbound", directions)
         self.assertEqual(fake_store["messages"][2]["agent_mode"], "client")
 
     def test_webhook_downloads_media_before_calling_ai_core(self):

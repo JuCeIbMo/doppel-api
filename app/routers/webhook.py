@@ -342,12 +342,9 @@ async def _process_bot_response(
             media=media,
         )
 
-        conversation = _load_conversation_context(
-            supabase,
-            tenant_id=tenant_id,
-            user_phone=user_phone,
-            limit=settings.AI_CONTEXT_MESSAGES,
-        )
+        # Conversation history is owned by the ai-core (Agno) per-user session in
+        # its own Postgres; the API no longer loads/sends it. Supabase `messages`
+        # remains the inbound/outbound log for the dashboard.
         system_prompt = _select_system_prompt(config=config, mode=mode)
 
         result = await ai_core_runtime.respond(
@@ -360,7 +357,6 @@ async def _process_bot_response(
             content=inbound_text,
             system_prompt=system_prompt,
             model=str(config.get("ai_model") or "claude-sonnet-4-20250514"),
-            conversation=conversation,
             media_paths=media_paths,
         )
         ai_text = str(result.get("reply") or "").strip()
@@ -403,30 +399,3 @@ def _select_system_prompt(*, config: dict, mode: str) -> str:
     if mode == "manager" and config.get("manager_prompt"):
         return str(config["manager_prompt"])
     return str(config.get("system_prompt") or "")
-
-
-def _load_conversation_context(
-    supabase,
-    *,
-    tenant_id: str,
-    user_phone: str,
-    limit: int,
-) -> list[dict[str, str]]:
-    result = (
-        supabase.table("messages")
-        .select("direction, content, created_at")
-        .eq("tenant_id", tenant_id)
-        .eq("user_phone", user_phone)
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-
-    conversation: list[dict[str, str]] = []
-    for row in reversed(result.data or []):
-        content = str(row.get("content") or "").strip()
-        if not content:
-            continue
-        role = "assistant" if row.get("direction") == "outbound" else "user"
-        conversation.append({"role": role, "content": content})
-    return conversation

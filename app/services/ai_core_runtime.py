@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Literal
 
@@ -28,7 +27,6 @@ async def respond(
     content: str,
     system_prompt: str,
     model: str,
-    conversation: list[dict[str, str]],
     media_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     """Send one WhatsApp turn to ai-core and return its JSON payload."""
@@ -50,7 +48,6 @@ async def respond(
         "content": content,
         "system_prompt": system_prompt,
         "model": model,
-        "conversation": json.dumps(conversation),
     }
 
     files = []
