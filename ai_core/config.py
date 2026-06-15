@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     AI_CORE_API_TOKEN: str = ""
     AI_CORE_DB_URL: str = ""
     GOOGLE_API_KEY: str = ""
-    AI_CORE_GEMINI_MODEL: str = "gemini-2.0-flash-001"
+    AI_CORE_GEMINI_MODEL: str = "gemini-3.1-flash-lite"
     AI_CORE_NUM_HISTORY_RUNS: int = 10
     # Echo mode: bypass the model and reply with tenant/user. For wiring tests.
     AI_CORE_ECHO: bool = False
