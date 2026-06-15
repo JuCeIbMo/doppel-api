@@ -37,11 +37,17 @@ async def get_tenant(tenant: dict = Depends(get_current_tenant)):
 
 @router.get("/whatsapp", response_model=list[WhatsAppAccountResponse])
 async def get_whatsapp_accounts(tenant: dict = Depends(get_current_tenant)):
+    # A tenant has at most one *active* WhatsApp connection at a time. Disconnected
+    # rows are kept for history but must not surface here, or the dashboard would
+    # read a stale row and wrongly show "not connected". Newest first so the live
+    # account always leads the list.
     result = (
         get_supabase()
         .table("whatsapp_accounts")
         .select("id, waba_id, phone_number_id, display_phone, status, created_at")
         .eq("tenant_id", tenant["id"])
+        .neq("status", "disconnected")
+        .order("created_at", desc=True)
         .execute()
     )
     return [WhatsAppAccountResponse(**{k: str(v) if v is not None else v for k, v in row.items()}) for row in result.data]
