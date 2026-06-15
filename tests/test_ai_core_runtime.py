@@ -12,6 +12,7 @@ os.environ.setdefault("DOPPEL_INTERNAL_API_TOKEN", "test-internal-token")
 
 import asyncio
 import io
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -73,6 +74,37 @@ class BuildRemoteToolsTest(unittest.TestCase):
 
         result = asyncio.run(run())
         self.assertEqual(result, [{"sku": "A1"}])
+
+
+class SanitizeSchemaTest(unittest.TestCase):
+    def test_strips_gemini_unsupported_keywords(self):
+        raw = {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": 1, "maxLength": 200, "description": "n"},
+                "price": {"type": ["number", "null"], "minimum": 0, "description": "p"},
+                "confirmed": {"type": "boolean", "default": False},
+                "field_updates": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {"x": {"type": "string", "pattern": "y"}},
+                },
+                "items": {"type": "array", "items": {"type": "integer", "maximum": 9}},
+            },
+            "required": ["name", "ghost"],  # 'ghost' is not a property
+        }
+        out = doppel_tools._sanitize_schema(raw)
+        flat = json.dumps(out)
+        for bad in ("minLength", "maxLength", "minimum", "maximum", "default",
+                    "additionalProperties", "pattern"):
+            self.assertNotIn(bad, flat, f"{bad} should have been stripped")
+        # nullable union normalized
+        self.assertEqual(out["properties"]["price"]["type"], "number")
+        self.assertTrue(out["properties"]["price"]["nullable"])
+        # dangling 'required' entry removed (root cause of the Gemini 400)
+        self.assertEqual(out["required"], ["name"])
+        # nested array item schema also cleaned
+        self.assertNotIn("maximum", json.dumps(out["properties"]["items"]))
 
 
 class RespondTest(unittest.TestCase):
