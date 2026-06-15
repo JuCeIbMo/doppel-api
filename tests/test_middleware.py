@@ -32,3 +32,19 @@ def test_security_headers_present():
     assert h["X-Frame-Options"] == "DENY"
     assert h["Referrer-Policy"] == "strict-origin-when-cross-origin"
     assert "max-age=" in h["Strict-Transport-Security"]
+
+
+def test_unhandled_exception_returns_clean_json():
+    from app.main import app as real_app
+    client = TestClient(real_app, raise_server_exceptions=False)
+
+    @real_app.get("/_boom_test")
+    def boom():
+        raise RuntimeError("secret internal detail")
+
+    r = client.get("/_boom_test")
+    assert r.status_code == 500
+    body = r.json()
+    assert body["error"] == "internal_error"
+    assert "secret internal detail" not in r.text  # no leak
+    assert body["request_id"]

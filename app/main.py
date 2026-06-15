@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.middleware import RequestIdLogFilter, install_observability
+from app.middleware import RequestIdLogFilter, install_observability, request_id_var
 from app.routers import asistpro, auth, dashboard, health, internal, oauth, webhook
 from app.routers.erp import (
     activity as erp_activity,
@@ -82,4 +82,19 @@ async def erp_error_handler(request: Request, exc: ERPError) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": exc.code, "message": exc.message, "detail": exc.detail},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all: log with request context, return a safe JSON 500 (no leak)."""
+    rid = request_id_var.get()
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_error",
+            "message": "An unexpected error occurred.",
+            "request_id": rid,
+        },
     )
