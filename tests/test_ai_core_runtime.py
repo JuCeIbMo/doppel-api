@@ -148,6 +148,36 @@ class RespondTest(unittest.TestCase):
         self.assertEqual(captured["init"]["instructions"], "Sé amable")
 
 
+class EchoModeTest(unittest.TestCase):
+    def test_echo_mode_returns_tenant_and_user_without_calling_model(self):
+        def boom(*a, **k):
+            raise AssertionError("the model must not be called in echo mode")
+
+        async def run():
+            async with httpx.AsyncClient(
+                transport=_transport(), base_url="http://doppel-api:8000"
+            ) as client:
+                runtime.settings.AI_CORE_ECHO = True
+                try:
+                    with patch.object(runtime, "Agent", boom):
+                        return await runtime.respond(
+                            client,
+                            tenant_id="tenant-xyz",
+                            mode="manager",
+                            sender_id="59172906023",
+                            content="hola",
+                            system_prompt="x",
+                            model="gemini-2.0-flash-001",
+                        )
+                finally:
+                    runtime.settings.AI_CORE_ECHO = False
+
+        result = asyncio.run(run())
+        self.assertEqual(result.stop_reason, "completed")
+        self.assertIn("tenant-xyz", result.reply)
+        self.assertIn("59172906023", result.reply)
+
+
 class TurnEndpointTest(unittest.TestCase):
     def test_turn_passes_images_and_tolerates_missing_conversation(self):
         fake = AsyncMock(return_value=TurnResponse(reply="ok"))

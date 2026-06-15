@@ -45,6 +45,12 @@ async def respond(
     model: str,
     images: list[Image] | None = None,
 ) -> TurnResponse:
+    if settings.AI_CORE_ECHO:
+        return TurnResponse(
+            reply=f"🔁 echo · tenant={tenant_id} · user={sender_id} · mode={mode}",
+            stop_reason="completed",
+        )
+
     tools = await build_remote_tools(http_client, tenant_id=tenant_id, mode=mode)
     agent = Agent(
         model=Gemini(id=_resolve_model(model), api_key=settings.GOOGLE_API_KEY or None),
