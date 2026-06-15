@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import httpx
@@ -7,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
+from app.middleware import RequestIdLogFilter, install_observability
 from app.routers import asistpro, auth, dashboard, health, internal, oauth, webhook
 from app.routers.erp import (
     activity as erp_activity,
@@ -21,9 +23,11 @@ from app.routers.erp import (
 from app.services.erp.exceptions import ERPError
 
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s",
 )
+for _h in logging.getLogger().handlers:
+    _h.addFilter(RequestIdLogFilter())
 logger = logging.getLogger("doppel")
 
 
@@ -42,6 +46,8 @@ app = FastAPI(
     description="WhatsApp Business automation API. Auth via OTP, Meta Embedded Signup, and tenant dashboard.",
     lifespan=lifespan,
 )
+
+install_observability(app)
 
 app.add_middleware(
     CORSMiddleware,
