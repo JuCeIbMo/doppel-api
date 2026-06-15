@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.dependencies import get_current_user
+from app.security import client_ip
 from app.models.schemas import (
     LoginResponse,
     OTPSendRequest,
@@ -63,7 +64,7 @@ def _check_otp_rate_limits(email: str, ip: str) -> None:
 @router.post("/otp/send", status_code=status.HTTP_202_ACCEPTED)
 async def send_otp(request: Request, data: OTPSendRequest):
     """Send a 6-digit OTP to the email. Creates the user if they don't exist."""
-    ip = request.client.host
+    ip = client_ip(request)
     _check_otp_rate_limits(data.email, ip)
 
     try:

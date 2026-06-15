@@ -39,3 +39,14 @@ def encrypt_token(token: str, key: str) -> str:
 
 def decrypt_token(encrypted: str, key: str) -> str:
     return _fernet(key).decrypt(encrypted.encode()).decode()
+
+
+def client_ip(request) -> str:
+    """Real client IP, honoring X-Forwarded-For first hop (behind Traefik)."""
+    xff = request.headers.get("X-Forwarded-For")
+    if xff:
+        first = xff.split(",")[0].strip()
+        if first:
+            return first
+    client = getattr(request, "client", None)
+    return getattr(client, "host", "") or "unknown"
