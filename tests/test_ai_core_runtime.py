@@ -11,8 +11,9 @@ os.environ.setdefault("DOPPEL_API_URL", "http://doppel-api:8000")
 os.environ.setdefault("DOPPEL_INTERNAL_API_TOKEN", "test-internal-token")
 
 import asyncio
+import io
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -20,8 +21,10 @@ pytest.importorskip("agno")
 
 import httpx
 from agno.tools import Function
+from fastapi.testclient import TestClient
 
 from ai_core import doppel_tools, runtime
+from ai_core import main as ai_main
 from ai_core.contracts import TurnResponse
 
 
@@ -111,3 +114,30 @@ class RespondTest(unittest.TestCase):
         self.assertEqual(result.reply, "Hola, soy el bot")
         self.assertEqual(captured["arun"]["session_id"], "tenant:t1:phone:591700")
         self.assertEqual(captured["init"]["instructions"], "Sé amable")
+
+
+class TurnEndpointTest(unittest.TestCase):
+    def test_turn_passes_images_and_tolerates_missing_conversation(self):
+        fake = AsyncMock(return_value=TurnResponse(reply="ok"))
+        ai_main.settings.AI_CORE_API_TOKEN = ""
+        with patch.object(ai_main, "respond", fake):
+            with TestClient(ai_main.app) as client:
+                resp = client.post(
+                    "/internal/doppel/turn",
+                    data={
+                        "tenant_id": "t1",
+                        "mode": "client",
+                        "sender_id": "591700",
+                        "chat_id": "591700",
+                        "content": "mira esto",
+                        "system_prompt": "Sé amable",
+                        "model": "gemini-2.0-flash-001",
+                    },
+                    files=[
+                        ("files", ("photo.jpg", io.BytesIO(b"\xff\xd8\xff"), "image/jpeg"))
+                    ],
+                )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["reply"], "ok")
+        images = fake.await_args.kwargs["images"]
+        self.assertEqual(len(images), 1)

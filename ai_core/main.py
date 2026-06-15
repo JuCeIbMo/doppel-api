@@ -1,8 +1,8 @@
-import json
 import logging
 from contextlib import asynccontextmanager
 
 import httpx
+from agno.media import Image
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, status
 
 from ai_core.config import settings
@@ -60,25 +60,25 @@ async def handle_turn(
     content: str = Form(""),
     system_prompt: str = Form(...),
     model: str = Form(...),
-    conversation: str = Form("[]"),
     files: list[UploadFile] | None = File(default=None),
     authorization: str | None = Header(default=None),
 ):
     _require_internal_token(authorization)
-    try:
-        parsed_conversation = json.loads(conversation)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid conversation payload",
-        ) from exc
+
+    # The conversation history is no longer sent by the API: Agno owns it via
+    # the per-user session (session_id) persisted in Postgres.
+    images: list[Image] = []
+    for upload in files or []:
+        if (upload.content_type or "").startswith("image/"):
+            images.append(Image(content=await upload.read()))
 
     if files:
         logger.info(
-            "Received media files tenant=%s mode=%s count=%s",
+            "Received media files tenant=%s mode=%s count=%s images=%s",
             tenant_id,
             mode,
             len(files),
+            len(images),
         )
 
     return await respond(
@@ -87,7 +87,7 @@ async def handle_turn(
         mode=mode,
         sender_id=sender_id,
         content=content,
-        conversation=parsed_conversation,
         system_prompt=system_prompt,
         model=model,
+        images=images or None,
     )
