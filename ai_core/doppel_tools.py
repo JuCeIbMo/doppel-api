@@ -1,51 +1,24 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 import httpx
+from agno.tools import Function
 
 from ai_core.config import settings
-from ai_core.contracts import ToolDefinition, ToolExecuteResponse, ToolListResponse
-from app.services.agent_core import Tool, ToolRegistry
+from ai_core.contracts import ToolExecuteResponse, ToolListResponse
 
 
-class RemoteTool(Tool):
-    def __init__(
-        self,
-        *,
-        http_client: httpx.AsyncClient,
-        tenant_id: str,
-        mode: str,
-        definition: ToolDefinition,
-    ) -> None:
-        self.http_client = http_client
-        self.tenant_id = tenant_id
-        self.mode = mode
-        self.definition = definition
-
-    @property
-    def name(self) -> str:
-        return self.definition.name
-
-    @property
-    def description(self) -> str:
-        return self.definition.description
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        return dict(self.definition.input_schema)
-
-    @property
-    def read_only(self) -> bool:
-        return self.definition.read_only
-
-    async def execute(self, **kwargs: Any) -> Any:
-        response = await self.http_client.post(
+def _make_entrypoint(
+    http_client: httpx.AsyncClient, *, tenant_id: str, mode: str, name: str
+) -> Callable[..., Any]:
+    async def _call(**kwargs: Any) -> Any:
+        response = await http_client.post(
             f"{settings.DOPPEL_API_URL.rstrip('/')}/internal/ai/tools/execute",
             json={
-                "tenant_id": self.tenant_id,
-                "mode": self.mode,
-                "tool_name": self.name,
+                "tenant_id": tenant_id,
+                "mode": mode,
+                "tool_name": name,
                 "arguments": kwargs,
             },
             headers={"Authorization": f"Bearer {settings.DOPPEL_INTERNAL_API_TOKEN}"},
@@ -53,16 +26,19 @@ class RemoteTool(Tool):
         response.raise_for_status()
         payload = ToolExecuteResponse.model_validate(response.json())
         if not payload.ok:
-            return f"Error executing {self.name}: {payload.error or 'unknown error'}"
+            return f"Error executing {name}: {payload.error or 'unknown error'}"
         return payload.result
 
+    _call.__name__ = name
+    return _call
 
-async def build_remote_registry(
-    http_client: httpx.AsyncClient,
-    *,
-    tenant_id: str,
-    mode: str,
-) -> ToolRegistry:
+
+async def build_remote_tools(
+    http_client: httpx.AsyncClient, *, tenant_id: str, mode: str
+) -> list[Function]:
+    """Fetch the tenant/mode tool registry from Doppel and wrap each entry as an
+    Agno Function whose entrypoint executes the tool back over HTTP."""
+
     response = await http_client.get(
         f"{settings.DOPPEL_API_URL.rstrip('/')}/internal/ai/tools",
         params={"tenant_id": tenant_id, "mode": mode},
@@ -71,14 +47,16 @@ async def build_remote_registry(
     response.raise_for_status()
     payload = ToolListResponse.model_validate(response.json())
 
-    registry = ToolRegistry()
+    tools: list[Function] = []
     for definition in payload.tools:
-        registry.register(
-            RemoteTool(
-                http_client=http_client,
-                tenant_id=tenant_id,
-                mode=mode,
-                definition=definition,
+        tools.append(
+            Function(
+                name=definition.name,
+                description=definition.description,
+                parameters=definition.input_schema,
+                entrypoint=_make_entrypoint(
+                    http_client, tenant_id=tenant_id, mode=mode, name=definition.name
+                ),
             )
         )
-    return registry
+    return tools
