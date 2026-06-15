@@ -24,7 +24,7 @@ services:
       - .env
     environment:
       DOPPEL_API_URL: http://doppel-api:8000
-      AI_CORE_DB_URL: postgresql://ai:ai@ai-core-postgres:5432/ai_core
+      AI_CORE_DB_URL: postgresql+psycopg://ai:ai@ai-core-postgres:5432/ai_core
     depends_on:
       ai-core-postgres:
         condition: service_healthy
