@@ -1,0 +1,39 @@
+services:
+  doppel-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: doppel-api
+    env_file:
+      - .env
+    environment:
+      # El bot Agno corre dentro de doppel-api y guarda historial/memoria aquí.
+      # El host es el nombre del servicio Postgres de abajo (no localhost).
+      AGNO_DB_URL: postgresql+psycopg://ai:ai@agno-postgres:5432/agno
+      # Flag de "bot activado": cualquier valor no vacío activa el bot.
+      AI_CORE_URL: enabled
+    depends_on:
+      agno-postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  agno-postgres:
+    image: pgvector/pgvector:pg17
+    container_name: agno-postgres
+    environment:
+      POSTGRES_DB: agno
+      POSTGRES_USER: ai
+      POSTGRES_PASSWORD: ai
+    volumes:
+      - agno-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai -d agno"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  agno-postgres-data:
