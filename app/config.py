@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     META_API_RETRY_DELAY_MS: int = 300
     ANTHROPIC_API_RETRIES: int = 2
 
+    # Agno (Postgres separado para historial/memoria de los agentes)
+    AGNO_DB_URL: str = ""
+    # OpenAI Whisper para transcribir notas de voz de WhatsApp
+    OPENAI_API_KEY: str = ""
+    AI_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
+
     # AI core internal runtime. Empty URL disables agent responses.
     AI_CORE_URL: str = Field(
         default="",
