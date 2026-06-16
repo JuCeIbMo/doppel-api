@@ -12,3 +12,7 @@ openpyxl>=3.1.0,<4.0.0
 reportlab>=4.0.0,<5.0.0
 python-barcode>=0.15.0,<1.0.0
 Pillow>=12.2.0
+# AI core (Agno como librería in-process + Whisper para transcripción de audio)
+agno>=2.0.0,<3.0.0
+openai>=1.50.0,<2.0.0
+psycopg[binary]>=3.1.0
