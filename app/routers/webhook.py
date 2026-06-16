@@ -10,7 +10,8 @@ from fastapi.responses import PlainTextResponse, Response
 
 from app.config import settings
 from app.security import decrypt_token, verify_webhook_signature
-from app.services import ai_core_runtime, meta_api
+from app.ai import respond as ai_respond
+from app.services import meta_api
 from app.services.phone import normalize_phone
 from app.services.supabase_client import get_supabase
 
@@ -335,7 +336,7 @@ async def _process_bot_response(
 
         wa_account = wa_result.data
         access_token = decrypt_token(wa_account["access_token_encrypted"], settings.ENCRYPTION_KEY)
-        media_paths = await _download_media_files(
+        await _download_media_files(
             http_client,
             tenant_id=tenant_id,
             token=access_token,
@@ -347,19 +348,16 @@ async def _process_bot_response(
         # remains the inbound/outbound log for the dashboard.
         system_prompt = _select_system_prompt(config=config, mode=mode)
 
-        result = await ai_core_runtime.respond(
-            http_client,
-            tenant_id=tenant_id,
+        ai_text = (await ai_respond(
             mode=mode,
-            sender_id=user_phone,
-            chat_id=user_phone,
-            message_id=inbound_message_id,
+            tenant_id=tenant_id,
+            user_phone=user_phone,
             content=inbound_text,
             system_prompt=system_prompt,
             model=str(config.get("ai_model") or "claude-sonnet-4-20250514"),
-            media_paths=media_paths,
-        )
-        ai_text = str(result.get("reply") or "").strip()
+            supabase=supabase,
+            media=media,
+        )).strip()
         if not ai_text:
             logger.warning(
                 "Empty agent response tenant=%s phone=%s mode=%s",
