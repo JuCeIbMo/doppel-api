@@ -35,38 +35,92 @@ conservando toda la lógica de negocio (ERP services, Supabase, webhook, modos).
 
 ## Arquitectura
 
+**Principio organizador: TODO lo de IA vive en un único paquete `app/ai/`,**
+visualmente separado del backend de negocio (`app/routers/`, `app/services/`,
+`app/models/`). El resto del backend solo conoce `from app.ai import respond`;
+nada fuera de `app/ai/` importa Agno.
+
+### Estructura de carpetas
+
 ```
-webhook.py (_process_bot_response)
-   │  cambia 1 llamada: ai_core_runtime.respond(...) -> agno_bot.respond(...)
+app/
+├── ai/                          ◄══ TODO LO DE IA (frontera de un solo import)
+│   ├── __init__.py              # expone SOLO respond()  → única puerta de entrada
+│   ├── bridge.py                # respond(): el puente que llama el webhook
+│   ├── factories/
+│   │   ├── base.py              # config común (Claude + PostgresDb de Agno)
+│   │   ├── client_agent.py      # get_client_agent(...)
+│   │   └── manager_agent.py     # get_manager_agent(...)
+│   ├── tools/
+│   │   ├── client_tools.py      # build_client_tools(...)  → funciones read-only
+│   │   └── manager_tools.py     # build_manager_tools(...) → funciones ERP
+│   ├── media/
+│   │   └── transcription.py     # transcribe_audio() (Whisper) + prep de imágenes
+│   ├── prompts.py               # selección system_prompt / manager_prompt
+│   └── config.py                # AGNO_DB_URL, OPENAI_API_KEY, modelo por defecto
+│
+├── routers/        ← negocio (webhook, dashboard, erp, auth...) — SIN tocar
+├── services/       ← negocio (erp/, supabase_client, meta_api, phone...) — SIN tocar
+└── models/         ← schemas de negocio
+```
+
+### Flujo
+
+```
+app/routers/webhook.py (_process_bot_response)
+   │  cambia 1 llamada: ai_core_runtime.respond(...) -> app.ai.respond(...)
    ▼
-app/services/agno_bot.py        ← función puente (entrada única por mensaje)
-   │   - transcribe audio (Whisper) si hay nota de voz
+app/ai/bridge.py :: respond()        ← entrada única por mensaje
+   │   - transcribe audio (Whisper) si hay nota de voz   (app/ai/media/)
    │   - prepara imágenes para Claude (agno Image)
    │   - elige factory según mode
    ▼
-app/agents/client_agent.py      ← get_client_agent(...)
-app/agents/manager_agent.py     ← get_manager_agent(...)
+app/ai/factories/client_agent.py  /  manager_agent.py
    │   model=Claude, db=PostgresDb(AGNO_DB_URL), tools=[funciones],
    │   add_history_to_context=True, user_id=phone, session_id=tenant:phone
    ▼
-app/agents/tools/               ← tools como funciones (envuelven ERP services)
+app/ai/tools/                        ← tools (cáscara delgada que llama a app/services/erp/)
 ```
 
-### Componentes nuevos
+### Reglas de frontera
 
-- **`app/agents/_base.py`** — helper compartido por las dos factories (construye
-  `PostgresDb`, `Claude`, defaults comunes) para no duplicar config.
-- **`app/agents/client_agent.py`** — `get_client_agent(*, tenant_id, user_phone,
-  system_prompt, model_id, supabase) -> Agent`.
-- **`app/agents/manager_agent.py`** — `get_manager_agent(...)` igual salvo
+- **Único import público:** el backend solo usa `from app.ai import respond`.
+  `app/ai/__init__.py` es el contrato; lo de adentro se puede reorganizar libre.
+- **Dirección de dependencias:** `app/ai/` PUEDE importar de `app/services/`
+  (las tools llaman a los ERP services). `app/services/` y `app/routers/` NO
+  importan de `app/ai/` salvo el webhook, que solo importa `respond`.
+- **Tools = cáscara delgada:** la lógica de negocio se queda en `app/services/erp/`.
+  Nunca se reimplementa negocio dentro de `app/ai/`.
+
+### Componentes nuevos (todos bajo `app/ai/`)
+
+- **`app/ai/__init__.py`** — re-exporta `respond` desde `bridge`.
+- **`app/ai/bridge.py`** — `respond(...)`: entrada única; orquesta media + factory.
+- **`app/ai/factories/base.py`** — helper compartido (construye `PostgresDb`,
+  `Claude`, defaults comunes) para no duplicar config entre las dos factories.
+- **`app/ai/factories/client_agent.py`** — `get_client_agent(*, tenant_id,
+  user_phone, system_prompt, model_id, supabase) -> Agent`.
+- **`app/ai/factories/manager_agent.py`** — `get_manager_agent(...)` igual salvo
   `instructions=manager_prompt`, tools ERP, más iteraciones.
-- **`app/agents/tools/client_tools.py`** — `build_client_tools(supabase, tenant_id)
+- **`app/ai/tools/client_tools.py`** — `build_client_tools(supabase, tenant_id)
   -> list[Callable]` (lookup_business_info, list_available_products).
-- **`app/agents/tools/manager_tools.py`** — `build_manager_tools(supabase,
-  tenant_id) -> list[Callable]` (get_dashboard_summary, get_stock, get_top_products,
+- **`app/ai/tools/manager_tools.py`** — `build_manager_tools(supabase, tenant_id)
+  -> list[Callable]` (get_dashboard_summary, get_stock, get_top_products,
   create_sale, adjust_stock).
-- **`app/services/agno_bot.py`** — `respond(...)` puente; entrada única del webhook.
-- **`app/services/transcription.py`** — `transcribe_audio(path) -> str` (Whisper).
+- **`app/ai/media/transcription.py`** — `transcribe_audio(path) -> str` (Whisper)
+  y helper de preparación de imágenes para Agno.
+- **`app/ai/prompts.py`** — selección de system_prompt vs manager_prompt por mode.
+- **`app/ai/config.py`** — `AGNO_DB_URL`, `OPENAI_API_KEY`, modelo por defecto.
+
+### Mapa "dónde modifico qué"
+
+| Quiero... | Archivo |
+|-----------|---------|
+| Agregar una skill/tool | `app/ai/tools/` (escribo función + la añado a la lista) |
+| Cambiar personalidad del bot | `app/ai/prompts.py` o `bot_configs` (BD) |
+| Cambiar modelo / memoria / historial | `app/ai/factories/base.py` |
+| Tocar transcripción audio / imágenes | `app/ai/media/` |
+| Tocar negocio (ERP, ventas, stock) | `app/services/erp/` (IA no se toca) |
 
 ### Componentes que se ELIMINAN
 
@@ -105,7 +159,7 @@ app/agents/tools/               ← tools como funciones (envuelven ERP services
 
 1. Meta → `POST /webhook/whatsapp` → valida firma → guarda inbound en `messages`.
 2. `_process_bot_response` lee `bot_configs`, descarga media, elige `mode`.
-3. Llama `agno_bot.respond(mode, tenant_id, user_phone, content, system_prompt,
+3. Llama `app.ai.respond(mode, tenant_id, user_phone, content, system_prompt,
    model, media_paths, supabase)`.
 4. El puente: transcribe audios (Whisper), arma `images=[Image(filepath=...)]`,
    añade `[documento adjunto]` para otros tipos.
@@ -159,12 +213,13 @@ nueva en el futuro = escribir una función y añadirla a la lista del builder.
 
 ## Pruebas
 
-- `tests/test_agno_bot.py` (nuevo): mock del Agent y de Whisper; verifica
+- `tests/test_ai_bridge.py` (nuevo): mock del Agent y de Whisper; verifica
   `session_id == f"{tenant}:{phone}"`, `user_id == phone`, selección de factory por
   mode, manejo de respuesta vacía.
 - Adaptar/retirar `tests/test_agent.py` y `tests/test_ai_core_runtime.py`.
 - `tests/test_mvp.py` parchea hoy `webhook.ai_core_runtime.respond` en varios tests
-  (líneas ~435, 515, 595, 642) → cambiar el target a `webhook.agno_bot.respond`.
+  (líneas ~435, 515, 595, 642) → cambiar el target a `app.routers.webhook.respond`
+  (el webhook hará `from app.ai import respond`).
 - Conservar los tests de `normalize_phone` (mover a `tests/test_phone.py`).
 - Test de tools: que cada builder devuelve callables y que cada función llama al ERP
   service correcto (con `bot_context` esperado).
