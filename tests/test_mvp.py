@@ -1,3 +1,13 @@
+import os
+
+os.environ.setdefault("META_APP_ID", "test-app-id")
+os.environ.setdefault("META_APP_SECRET", "test-app-secret")
+os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
+os.environ.setdefault("SUPABASE_URL", "http://localhost")
+os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
+os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
+os.environ.setdefault("AGNO_DB_URL", "postgresql+psycopg://ai:ai@localhost:5532/ai")
+
 import hashlib
 import hmac
 import json
@@ -426,13 +436,13 @@ class MVPApiTests(unittest.TestCase):
             "messages": [],
         }
         fake_supabase = FakeSupabase(fake_store)
-        ai_core_response = AsyncMock(return_value={"reply": "Listo", "mode": "manager"})
+        ai_core_response = AsyncMock(return_value="Listo")
 
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
             patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
-            patch("app.routers.webhook.ai_core_runtime.respond", ai_core_response),
+            patch("app.routers.webhook.ai_respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-1")),
         ):
@@ -506,13 +516,13 @@ class MVPApiTests(unittest.TestCase):
             ],
         }
         fake_supabase = FakeSupabase(fake_store)
-        ai_core_response = AsyncMock(return_value={"reply": "Cuesta 10", "mode": "client"})
+        ai_core_response = AsyncMock(return_value="Cuesta 10")
 
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
             patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
-            patch("app.routers.webhook.ai_core_runtime.respond", ai_core_response),
+            patch("app.routers.webhook.ai_respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-2")),
         ):
@@ -581,7 +591,7 @@ class MVPApiTests(unittest.TestCase):
             "messages": [],
         }
         fake_supabase = FakeSupabase(fake_store)
-        ai_core_response = AsyncMock(return_value={"reply": "Veo la imagen", "mode": "client"})
+        ai_core_response = AsyncMock(return_value="Veo la imagen")
         download_media = AsyncMock(return_value={
             "path": "C:/tmp/media-1.jpg",
             "mime_type": "image/jpeg",
@@ -592,7 +602,7 @@ class MVPApiTests(unittest.TestCase):
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
             patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
-            patch("app.routers.webhook.ai_core_runtime.respond", ai_core_response),
+            patch("app.routers.webhook.ai_respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.download_media_to_path", download_media),
             patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-3")),
@@ -607,7 +617,8 @@ class MVPApiTests(unittest.TestCase):
         self.assertEqual(fake_store["messages"][0]["media"][0]["id"], "media-1")
         download_media.assert_awaited_once()
         self.assertEqual(ai_core_response.await_args.kwargs["content"], "Mira esto")
-        self.assertEqual(ai_core_response.await_args.kwargs["media_paths"], ["C:/tmp/media-1.jpg"])
+        media_arg = ai_core_response.await_args.kwargs["media"]
+        self.assertEqual([item["local_path"] for item in media_arg], ["C:/tmp/media-1.jpg"])
 
     def test_webhook_routes_configured_phone_number_to_asistpro_n8n(self):
         payload = {
@@ -639,7 +650,7 @@ class MVPApiTests(unittest.TestCase):
             patch("app.routers.webhook.settings.ASISTPRO_PHONE_NUMBER_IDS", ["phone-asistpro"], create=True),
             patch("app.routers.webhook.settings.ASISTPRO_N8N_WEBHOOK_URL", "https://n8n.example/webhook", create=True),
             patch("app.routers.webhook.settings.ASISTPRO_WEBHOOK_SECRET", "shared-secret", create=True),
-            patch("app.routers.webhook.ai_core_runtime.respond", AsyncMock()) as ai_core_response,
+            patch("app.routers.webhook.ai_respond", AsyncMock(return_value="")) as ai_core_response,
         ):
             response = self.client.post(
                 "/webhook/whatsapp",
