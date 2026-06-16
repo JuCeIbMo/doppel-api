@@ -1,9 +1,0 @@
-FROM python:3.12-slim
-WORKDIR /app
-RUN adduser --system --no-create-home appuser
-COPY ai_core/requirements.txt /tmp/ai-core-requirements.txt
-RUN pip install --no-cache-dir -r /tmp/ai-core-requirements.txt
-COPY . .
-USER appuser
-EXPOSE 8000
-CMD ["uvicorn", "ai_core.main:app", "--host", "0.0.0.0", "--port", "8000"]
