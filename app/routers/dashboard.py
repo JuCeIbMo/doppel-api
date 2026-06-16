@@ -23,7 +23,7 @@ from app.models.schemas import (
 )
 from app.security import decrypt_token
 from app.services import meta_api
-from app.services.manager_tools import normalize_phone
+from app.services.phone import normalize_phone
 from app.services.supabase_client import get_supabase
 
 logger = logging.getLogger("doppel.dashboard")

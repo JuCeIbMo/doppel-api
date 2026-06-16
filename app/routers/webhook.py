@@ -11,7 +11,7 @@ from fastapi.responses import PlainTextResponse, Response
 from app.config import settings
 from app.security import decrypt_token, verify_webhook_signature
 from app.services import ai_core_runtime, meta_api
-from app.services.manager_tools import normalize_phone
+from app.services.phone import normalize_phone
 from app.services.supabase_client import get_supabase
 
 logger = logging.getLogger("doppel.webhook")
