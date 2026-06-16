@@ -41,21 +41,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     AI_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
 
-    # AI core internal runtime. Empty URL disables agent responses.
+    # Empty URL disables agent responses.
     AI_CORE_URL: str = Field(
         default="",
         validation_alias=AliasChoices("AI_CORE_URL", "NANOBOT_RUNTIME_URL"),
-    )
-    AI_CORE_TOKEN: str = Field(
-        default="",
-        validation_alias=AliasChoices("AI_CORE_TOKEN", "NANOBOT_RUNTIME_TOKEN"),
-    )
-    AI_CORE_TIMEOUT_SECONDS: float = Field(
-        default=120.0,
-        validation_alias=AliasChoices(
-            "AI_CORE_TIMEOUT_SECONDS",
-            "NANOBOT_RUNTIME_TIMEOUT_SECONDS",
-        ),
     )
 
     # Token expected on Doppel internal endpoints used by ai-core.
@@ -113,18 +102,6 @@ class Settings(BaseSettings):
         enable_decoding=False,
         extra="ignore",
     )
-
-    @property
-    def NANOBOT_RUNTIME_URL(self) -> str:
-        return self.AI_CORE_URL
-
-    @property
-    def NANOBOT_RUNTIME_TOKEN(self) -> str:
-        return self.AI_CORE_TOKEN
-
-    @property
-    def NANOBOT_RUNTIME_TIMEOUT_SECONDS(self) -> float:
-        return self.AI_CORE_TIMEOUT_SECONDS
 
 
 settings = Settings()
