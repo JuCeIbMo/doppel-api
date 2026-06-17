@@ -18,4 +18,10 @@ def build_db() -> PostgresDb:
 
 
 def build_model(model_id: str | None) -> Claude:
-    return Claude(id=model_id or DEFAULT_MODEL)
+    # El runtime es Claude-only. Un id que no sea de Claude (p.ej. "gpt-4o-mini"
+    # o "gemini-*" heredado de configs viejas en bot_configs.ai_model) hace que
+    # Anthropic devuelva 404 y rompe la respuesta del bot. Degradamos al modelo
+    # por defecto en vez de explotar.
+    if not model_id or not model_id.startswith("claude"):
+        return Claude(id=DEFAULT_MODEL)
+    return Claude(id=model_id)
