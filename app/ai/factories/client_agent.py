@@ -5,7 +5,7 @@ from __future__ import annotations
 from agno.agent import Agent
 from supabase import Client
 
-from app.ai.factories.base import build_db, build_model, build_whatsapp_tools, session_id_for
+from app.ai.factories.base import build_db, build_model, build_skills, build_whatsapp_tools, session_id_for
 from app.ai.tools.client_tools import build_client_tools
 
 
@@ -36,6 +36,7 @@ def get_client_agent(
         db=build_db(),
         instructions=system_prompt,
         tools=tools,
+        skills=build_skills("atencion-cliente", "catalogo-productos", "whatsapp-interactivo"),
         user_id=user_phone,
         session_id=session_id_for(tenant_id, user_phone),
         add_history_to_context=True,

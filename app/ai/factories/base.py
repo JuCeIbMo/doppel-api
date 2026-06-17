@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from agno.db.postgres import PostgresDb
 from agno.models.anthropic import Claude
 from agno.models.base import Model
 from agno.models.openai import OpenAIChat
+from agno.skills import LocalSkills, Skills
 from agno.tools.whatsapp import WhatsAppTools
 
 from app.ai.config import AGNO_DB_URL, DEFAULT_MODEL
+
+_SKILLS_DIR = Path(__file__).parent.parent.parent.parent / "skills"
 
 # Prefijos de los ids de modelos de OpenAI (gpt-4o, gpt-4o-mini, o1/o3/o4, chatgpt-*).
 _OPENAI_PREFIXES = ("gpt", "o1", "o3", "o4", "chatgpt")
@@ -32,6 +37,16 @@ def _resolve_model(model_id: str) -> Model | None:
     if model_id.startswith(_OPENAI_PREFIXES):
         return OpenAIChat(id=model_id)
     return None
+
+
+def build_skills(*skill_names: str) -> Skills:
+    """Carga skills por nombre desde el directorio raíz skills/."""
+    loaders = [
+        LocalSkills(str(_SKILLS_DIR / name))
+        for name in skill_names
+        if (_SKILLS_DIR / name).exists()
+    ]
+    return Skills(loaders=loaders)
 
 
 def build_whatsapp_tools(

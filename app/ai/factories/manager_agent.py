@@ -6,7 +6,7 @@ from agno.agent import Agent
 from agno.tools.whatsapp import WhatsAppTools
 from supabase import Client
 
-from app.ai.factories.base import build_db, build_model, build_whatsapp_tools, session_id_for
+from app.ai.factories.base import build_db, build_model, build_skills, build_whatsapp_tools, session_id_for
 from app.ai.tools.manager_tools import build_manager_tools
 
 
@@ -39,6 +39,7 @@ def get_manager_agent(
         db=build_db(),
         instructions=system_prompt,
         tools=tools,
+        skills=build_skills("erp-manager", "whatsapp-interactivo"),
         user_id=user_phone,
         session_id=session_id_for(tenant_id, user_phone),
         add_history_to_context=True,
