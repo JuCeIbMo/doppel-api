@@ -41,14 +41,11 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     AI_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
 
-    # Empty URL disables agent responses.
+    # Empty value disables agent responses; any non-empty value enables the bot.
     AI_CORE_URL: str = Field(
         default="",
         validation_alias=AliasChoices("AI_CORE_URL", "NANOBOT_RUNTIME_URL"),
     )
-
-    # Token expected on Doppel internal endpoints used by ai-core.
-    DOPPEL_INTERNAL_API_TOKEN: str = ""
 
     # Asistpro WhatsApp gateway. Phone IDs listed here bypass Doppel agent flow.
     ASISTPRO_PHONE_NUMBER_IDS: list[str] = []
