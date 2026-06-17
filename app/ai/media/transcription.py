@@ -34,12 +34,15 @@ def prepare_images(media: list[dict] | None) -> list[Image]:
 
 async def transcribe_audio(path: str) -> str:
     """Transcribe un archivo de audio a texto con Whisper. Devuelve '' si falla."""
+    logger.debug("[WHISPER] transcribiendo path=%s", path)
     try:
         with open(path, "rb") as fh:
             result = await _get_client().audio.transcriptions.create(
                 model="whisper-1", file=fh
             )
-        return (result.text or "").strip()
+        text = (result.text or "").strip()
+        logger.debug("[WHISPER] ok chars=%d resultado=%r", len(text), text[:80])
+        return text
     except Exception:
         logger.exception("transcripción de audio falló path=%s", path)
         return ""

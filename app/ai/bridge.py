@@ -33,6 +33,11 @@ async def respond(
     media: list[dict] | None = None,
 ) -> str:
     """Ejecuta el agente correspondiente y devuelve el texto final ('' si falla)."""
+    media_types = [m.get("type") for m in (media or [])]
+    logger.debug(
+        "[START] tenant=%s phone=%s mode=%s model=%s media=%s texto_chars=%d",
+        tenant_id, user_phone, mode, model, media_types, len(content or ""),
+    )
     try:
         transcript = await transcribe_audio_media(media)
         images = prepare_images(media)
@@ -40,8 +45,14 @@ async def respond(
         text_parts = [content] if content else []
         if transcript:
             text_parts.append(f"[Nota de voz]: {transcript}")
+            logger.debug("[TRANSCRIPCION] tenant=%s chars=%d", tenant_id, len(transcript))
         text = "\n".join(text_parts) + _document_note(media)
         text = text.strip()
+
+        logger.debug(
+            "[INPUT_AGENTE] tenant=%s mode=%s imagenes=%d texto_final=%r",
+            tenant_id, mode, len(images), text[:120],
+        )
 
         factory = get_manager_agent if mode == "manager" else get_client_agent
         agent = factory(
@@ -49,7 +60,13 @@ async def respond(
             system_prompt=system_prompt, model_id=model, supabase=supabase,
         )
         run = await agent.arun(text, images=images or None)
-        return (run.content or "").strip()
+        reply = (run.content or "").strip()
+
+        logger.debug(
+            "[OUTPUT_AGENTE] tenant=%s mode=%s chars=%d respuesta=%r",
+            tenant_id, mode, len(reply), reply[:120],
+        )
+        return reply
     except Exception:
         logger.exception(
             "respuesta IA falló tenant=%s phone=%s mode=%s", tenant_id, user_phone, mode

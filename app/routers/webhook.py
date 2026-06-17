@@ -251,6 +251,10 @@ async def _process_bot_response(
     media: list[dict] | None = None,
 ) -> None:
     """Generate AI response and send it via WhatsApp. Runs as a background task."""
+    logger.debug(
+        "[BOT_START] tenant=%s phone=%s mode=%s msg_id=%s media_count=%d",
+        tenant_id, user_phone, mode, inbound_message_id, len(media or []),
+    )
     try:
         supabase = get_supabase()
 
@@ -269,6 +273,11 @@ async def _process_bot_response(
         config = config_result.data
         is_manager = mode == "manager"
 
+        logger.debug(
+            "[BOT_CONFIG] tenant=%s bot_enabled=%s ai_model=%s is_manager=%s",
+            tenant_id, config.get("bot_enabled"), config.get("ai_model"), is_manager,
+        )
+
         # Manager bypasses bot_enabled — operator can talk even when client bot is paused.
         if not is_manager and not config.get("bot_enabled", True):
             logger.info("Bot disabled for tenant_id=%s", tenant_id)
@@ -284,10 +293,12 @@ async def _process_bot_response(
             .execute()
         )
         if not wa_result.data:
+            logger.warning("[BOT_ABORT] wa_account no encontrado wa_account_id=%s", wa_account_id)
             return
 
         wa_account = wa_result.data
         access_token = decrypt_token(wa_account["access_token_encrypted"], settings.ENCRYPTION_KEY)
+        logger.debug("[BOT_MEDIA] descargando %d archivos tenant=%s", len(media or []), tenant_id)
         await _download_media_files(
             http_client,
             tenant_id=tenant_id,
@@ -317,6 +328,10 @@ async def _process_bot_response(
             )
             return
 
+        logger.debug(
+            "[BOT_SEND] tenant=%s phone=%s chars=%d respuesta=%r",
+            tenant_id, user_phone, len(ai_text), ai_text[:120],
+        )
         wa_msg_id = await meta_api.send_whatsapp_message(
             http_client,
             wa_account["phone_number_id"],
@@ -339,7 +354,10 @@ async def _process_bot_response(
             "agent_mode": mode,
         }).execute()
 
-        logger.info("Bot responded to=%s tenant_id=%s", user_phone, tenant_id)
+        logger.info(
+            "[BOT_OK] tenant=%s phone=%s mode=%s wa_msg_id=%s",
+            tenant_id, user_phone, mode, wa_msg_id,
+        )
 
     except Exception:
         logger.exception("Bot response failed for tenant=%s phone=%s", tenant_id, user_phone)
