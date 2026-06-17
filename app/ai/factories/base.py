@@ -6,6 +6,7 @@ from agno.db.postgres import PostgresDb
 from agno.models.anthropic import Claude
 from agno.models.base import Model
 from agno.models.openai import OpenAIChat
+from agno.tools.whatsapp import WhatsAppTools
 
 from app.ai.config import AGNO_DB_URL, DEFAULT_MODEL
 
@@ -31,6 +32,27 @@ def _resolve_model(model_id: str) -> Model | None:
     if model_id.startswith(_OPENAI_PREFIXES):
         return OpenAIChat(id=model_id)
     return None
+
+
+def build_whatsapp_tools(
+    *,
+    access_token: str,
+    phone_number_id: str,
+    recipient_waid: str,
+    **kwargs: bool,
+) -> WhatsAppTools | None:
+    """Crea WhatsAppTools con las credenciales del tenant. Devuelve None si faltan
+    credenciales para no romper el agente cuando aún no hay cuenta conectada."""
+    if not access_token or not phone_number_id:
+        return None
+    return WhatsAppTools(
+        access_token=access_token,
+        phone_number_id=phone_number_id,
+        recipient_waid=recipient_waid,
+        enable_send_text_message=False,   # el pipeline ya envía el texto final
+        enable_send_template_message=False,
+        **kwargs,
+    )
 
 
 def build_model(model_id: str | None) -> Model:

@@ -30,6 +30,8 @@ async def respond(
     system_prompt: str,
     model: str,
     supabase: Client,
+    wa_access_token: str = "",
+    wa_phone_number_id: str = "",
     media: list[dict] | None = None,
 ) -> str:
     """Ejecuta el agente correspondiente y devuelve el texto final ('' si falla)."""
@@ -58,6 +60,7 @@ async def respond(
         agent = factory(
             tenant_id=tenant_id, user_phone=user_phone,
             system_prompt=system_prompt, model_id=model, supabase=supabase,
+            wa_access_token=wa_access_token, wa_phone_number_id=wa_phone_number_id,
         )
         run = await agent.arun(text, images=images or None)
         reply = (run.content or "").strip()
