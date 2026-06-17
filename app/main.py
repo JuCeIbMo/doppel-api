@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.middleware import RequestIdLogFilter, install_observability, request_id_var
-from app.routers import asistpro, auth, dashboard, health, oauth, webhook
+from app.routers import auth, dashboard, health, oauth, webhook
 from app.routers.erp import (
     activity as erp_activity,
     clients as erp_clients,
@@ -62,7 +62,6 @@ app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(oauth.router)
 app.include_router(webhook.router)
-app.include_router(asistpro.router)
 
 # --- ERP module ---------------------------------------------------------------
 app.include_router(erp_products.router, prefix="/erp/products", tags=["ERP - Products"])

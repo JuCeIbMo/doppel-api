@@ -47,13 +47,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("AI_CORE_URL", "NANOBOT_RUNTIME_URL"),
     )
 
-    # Asistpro WhatsApp gateway. Phone IDs listed here bypass Doppel agent flow.
-    ASISTPRO_PHONE_NUMBER_IDS: list[str] = []
-    ASISTPRO_N8N_WEBHOOK_URL: str = ""
-    ASISTPRO_WEBHOOK_SECRET: str = ""
-    ASISTPRO_SEND_API_KEY: str = ""
-
-    @field_validator("ALLOWED_ORIGINS", "ASISTPRO_PHONE_NUMBER_IDS", mode="before")
+    @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
     def _parse_list_setting(cls, v):
         if isinstance(v, list):
