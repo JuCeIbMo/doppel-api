@@ -36,4 +36,16 @@ def build_client_tools(supabase: Client, tenant_id: str) -> list[Callable]:
         )
         return result.data or []
 
-    return [lookup_business_info, list_available_products]
+    async def count_available_products() -> dict:
+        """Devuelve el total de productos disponibles del negocio.
+        Úsalo cuando el cliente pregunte cuántos productos hay en el catálogo."""
+        result = (
+            supabase.table("products")
+            .select("id", count="exact")
+            .eq("tenant_id", tenant_id)
+            .eq("available", True)
+            .execute()
+        )
+        return {"total": result.count or 0}
+
+    return [lookup_business_info, list_available_products, count_available_products]
