@@ -1,58 +1,49 @@
+"""Unit tests for client_tools wrappers.
+
+app.config instantiates Settings() at import time, requiring these env vars.
+Set safe test defaults before import.
+"""
+
+import os
+
+os.environ.setdefault("META_APP_ID", "test-app-id")
+os.environ.setdefault("META_APP_SECRET", "test-app-secret")
+os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
+os.environ.setdefault("SUPABASE_URL", "http://localhost")
+os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
+os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
+
 import asyncio
 
 from app.ai.tools.client_tools import build_client_tools
 
 
-class _FakeQuery:
-    def __init__(self, rows):
-        self._rows = rows
-    def select(self, *a, **k): return self
-    def eq(self, *a, **k): return self
-    def order(self, *a, **k): return self
-    def limit(self, *a, **k): return self
-    def execute(self):
-        rows = self._rows
-        class R:
-            data = rows
-            count = len(rows)
-        return R()
-
-
-class _FakeSupabase:
-    def __init__(self, rows):
-        self._rows = rows
-    def table(self, _name):
-        return _FakeQuery(self._rows)
-
-
-def test_build_client_tools_returns_callables():
-    tools = build_client_tools(_FakeSupabase([]), "t1")
+def test_build_client_tools_exposes_two_tools():
+    tools = build_client_tools("t1")
     assert all(callable(t) for t in tools)
-    assert {t.__name__ for t in tools} == {
-        "lookup_business_info",
-        "list_available_products",
-        "count_available_products",
-    }
+    assert {t.__name__ for t in tools} == {"search_catalog", "register_sale"}
 
 
-def test_list_available_products_returns_rows():
-    rows = [{"name": "Pizza", "price": 10, "available": True}]
-    tools = build_client_tools(_FakeSupabase(rows), "t1")
-    list_products = next(t for t in tools if t.__name__ == "list_available_products")
-    assert asyncio.run(list_products()) == rows
+def test_search_catalog_tool_delegates(monkeypatch):
+    async def fake_search(ctx, query=None):
+        assert ctx.tenant_id == "t1"
+        assert ctx.actor == "whatsapp_bot"
+        assert query == "coca"
+        return [{"id": "p1", "name": "Coca", "price": 1.2, "in_stock": True}]
+
+    monkeypatch.setattr("app.ai.tools.client_tools.storefront.search_catalog", fake_search)
+    tools = build_client_tools("t1")
+    search = next(t for t in tools if t.__name__ == "search_catalog")
+    assert asyncio.run(search("coca")) == [
+        {"id": "p1", "name": "Coca", "price": 1.2, "in_stock": True}]
 
 
-def test_count_available_products_returns_total():
-    rows = [
-        {"name": "Pizza", "price": 10, "available": True},
-        {"name": "Pasta", "price": 8, "available": True},
-    ]
-    tools = build_client_tools(_FakeSupabase(rows), "t1")
-    count_tool = next(t for t in tools if t.__name__ == "count_available_products")
-    assert asyncio.run(count_tool()) == {"total": 2}
+def test_register_sale_tool_delegates(monkeypatch):
+    async def fake_register(ctx, items, customer_phone=None, payment_method="whatsapp"):
+        assert ctx.actor == "whatsapp_bot"
+        return {"ok": True, "total": 1.2, "items": []}
 
-
-def test_count_available_products_empty():
-    tools = build_client_tools(_FakeSupabase([]), "t1")
-    count_tool = next(t for t in tools if t.__name__ == "count_available_products")
-    assert asyncio.run(count_tool()) == {"total": 0}
+    monkeypatch.setattr("app.ai.tools.client_tools.storefront.register_sale", fake_register)
+    tools = build_client_tools("t1")
+    register = next(t for t in tools if t.__name__ == "register_sale")
+    assert asyncio.run(register([{"product_id": "p1", "quantity": 1}]))["ok"] is True
