@@ -40,7 +40,7 @@ def _stock_map(tenant_id: str, product_ids: list[str]) -> dict[str, float]:
 class ProductsService:
     async def list(
         self, ctx: ERPContext, *, category: str | None = None, search: str | None = None,
-        limit: int = 50, offset: int = 0,
+        available: bool | None = None, limit: int = 50, offset: int = 0,
     ) -> list[dict]:
         q = (
             get_supabase().table("products").select(_FIELDS)
@@ -50,6 +50,8 @@ class ProductsService:
             q = q.eq("category", category)
         if search:
             q = q.ilike("name", f"%{search}%")
+        if available is True:
+            q = q.eq("available", True)
         rows = (q.range(offset, offset + limit - 1).execute()).data or []
         stock = _stock_map(ctx.tenant_id, [r["id"] for r in rows])
         for r in rows:

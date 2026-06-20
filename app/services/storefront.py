@@ -29,12 +29,11 @@ async def business_info(ctx: ERPContext) -> dict:
 
 async def search_catalog(ctx: ERPContext, query: str | None = None) -> list[dict]:
     """Lista lean de productos disponibles. Incluye `id` como ancla para la venta."""
-    rows = await ProductsService().list(ctx, search=query, limit=50)
+    rows = await ProductsService().list(ctx, search=query, available=True, limit=50)
     return [
         {"id": r["id"], "name": r["name"], "price": r["price"],
          "in_stock": float(r.get("stock", 0)) > 0}
         for r in rows
-        if r.get("available")
     ]
 
 
@@ -55,7 +54,7 @@ async def register_sale(
     if customer_phone:
         try:
             client_id = (await ClientsService().get_by_phone(ctx, customer_phone))["id"]
-        except NotFound:
+        except (NotFound, ERPError):
             client_id = None
 
     body = {

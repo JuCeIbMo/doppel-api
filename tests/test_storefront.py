@@ -60,13 +60,18 @@ def test_business_info_empty_returns_blanks(monkeypatch):
 
 
 def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
-    async def fake_list(self, ctx, *, category=None, search=None, limit=50, offset=0):
+    async def fake_list(self, ctx, *, category=None, search=None, available=None, limit=50, offset=0):
         assert ctx.tenant_id == "t1"
-        return [
+        assert available is True, "search_catalog debe pasar available=True al service"
+        all_rows = [
             {"id": "p1", "name": "Coca 500ml", "price": 1.2, "available": True, "stock": 5},
             {"id": "p2", "name": "Agua", "price": 0.8, "available": True, "stock": 0},
             {"id": "p3", "name": "Oculto", "price": 9.0, "available": False, "stock": 3},
         ]
+        # Emulate DB-level filter when available=True
+        if available is True:
+            return [r for r in all_rows if r["available"]]
+        return all_rows
     monkeypatch.setattr("app.services.storefront.ProductsService.list", fake_list)
     result = asyncio.run(storefront.search_catalog(CTX, query="a"))
     assert result == [
@@ -75,7 +80,7 @@ def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
     ]
 
 
-from app.services.erp.exceptions import InsufficientStock, NotFound
+from app.services.erp.exceptions import ERPError, InsufficientStock, NotFound
 
 
 def test_register_sale_happy_path(monkeypatch):
@@ -116,6 +121,28 @@ def test_register_sale_unknown_client_keeps_none(monkeypatch):
     result = asyncio.run(storefront.register_sale(
         CTX, items=[{"product_id": "p1", "quantity": 1}], customer_phone="+5491100"))
     assert result["ok"] is True
+
+
+def test_register_sale_erp_error_on_client_lookup_degrades_gracefully(monkeypatch):
+    """Un ERPError genérico en get_by_phone no debe abortar la venta; client_id=None."""
+    captured = {}
+
+    async def fake_get_by_phone(self, ctx, phone):
+        raise ERPError("boom")
+
+    async def fake_create_sale(self, ctx, body):
+        captured["body"] = body
+        return {"id": "s2", "total": 1.2,
+                "items": [{"product_name": "Agua", "quantity": 1, "subtotal": 1.2}]}
+
+    monkeypatch.setattr("app.services.storefront.ClientsService.get_by_phone", fake_get_by_phone)
+    monkeypatch.setattr("app.services.storefront.SalesService.create_sale", fake_create_sale)
+
+    result = asyncio.run(storefront.register_sale(
+        CTX, items=[{"product_id": "p2", "quantity": 1}], customer_phone="+5491100"))
+
+    assert result["ok"] is True
+    assert captured["body"]["client_id"] is None
 
 
 def test_register_sale_insufficient_stock_returns_error(monkeypatch):
