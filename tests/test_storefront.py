@@ -25,7 +25,10 @@ class _BizQuery:
     def __init__(self, rows):
         self._rows = rows
     def select(self, *a, **k): return self
-    def eq(self, *a, **k): return self
+    def eq(self, field, value):
+        if field == "tenant_id":
+            assert value == "t1"
+        return self
     def limit(self, *a, **k): return self
     def execute(self):
         rows = self._rows
