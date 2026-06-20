@@ -7,8 +7,11 @@ Reusa los ERP services existentes para que la lógica viva en un solo sitio.
 
 from __future__ import annotations
 
+from app.services.erp.clients import ClientsService
 from app.services.erp.context import ERPContext
+from app.services.erp.exceptions import ERPError, NotFound
 from app.services.erp.products import ProductsService
+from app.services.erp.sales import SalesService
 from app.services.supabase_client import get_supabase
 
 _BIZ_FIELDS = "name, description, hours, address, payment_methods"
@@ -33,3 +36,47 @@ async def search_catalog(ctx: ERPContext, query: str | None = None) -> list[dict
         for r in rows
         if r.get("available")
     ]
+
+
+async def register_sale(
+    ctx: ERPContext,
+    items: list[dict],
+    customer_phone: str | None = None,
+    payment_method: str = "whatsapp",
+) -> dict:
+    """Registra una venta del vendedor público. `items` = [{product_id, quantity}]
+    usando el id que la IA ya obtuvo de search_catalog (no re-resuelve por nombre).
+    Delega en SalesService.create_sale (atómico). Devuelve confirmación lean."""
+    if not items:
+        return {"error": "validation_error",
+                "message": "Se requiere al menos un ítem", "detail": {}}
+
+    client_id = None
+    if customer_phone:
+        try:
+            client_id = (await ClientsService().get_by_phone(ctx, customer_phone))["id"]
+        except NotFound:
+            client_id = None
+
+    body = {
+        "client_id": client_id,
+        "payment_method": payment_method,
+        "cash_account_id": None,
+        "discount": 0,
+        "notes": None,
+        "items": items,
+    }
+    try:
+        sale = await SalesService().create_sale(ctx, body)
+    except ERPError as exc:
+        return {"error": exc.code, "message": exc.message, "detail": exc.detail}
+
+    return {
+        "ok": True,
+        "total": sale.get("total"),
+        "items": [
+            {"name": it.get("product_name"), "qty": it.get("quantity"),
+             "subtotal": it.get("subtotal")}
+            for it in sale.get("items", [])
+        ],
+    }
