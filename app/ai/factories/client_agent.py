@@ -7,6 +7,8 @@ from supabase import Client
 
 from app.ai.factories.base import build_db, build_model, build_skills, build_whatsapp_tools, session_id_for
 from app.ai.tools.client_tools import build_client_tools
+from app.services import storefront
+from app.services.erp.context import bot_context
 
 
 def get_client_agent(
@@ -19,7 +21,7 @@ def get_client_agent(
     wa_access_token: str = "",
     wa_phone_number_id: str = "",
 ) -> Agent:
-    tools = build_client_tools(supabase, tenant_id)
+    tools = build_client_tools(tenant_id)
     wa_tools = build_whatsapp_tools(
         access_token=wa_access_token,
         phone_number_id=wa_phone_number_id,
@@ -31,6 +33,12 @@ def get_client_agent(
     )
     if wa_tools:
         tools.append(wa_tools)
+
+    ctx = bot_context(tenant_id, actor="whatsapp_bot")
+
+    async def _business_info() -> dict:
+        return await storefront.business_info(ctx)
+
     return Agent(
         model=build_model(model_id),
         db=build_db(),
@@ -49,4 +57,6 @@ def get_client_agent(
         add_history_to_context=True,
         num_history_runs=5,
         markdown=False,
+        dependencies={"business_info": _business_info},
+        add_dependencies_to_context=True,
     )
