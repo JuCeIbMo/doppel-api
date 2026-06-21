@@ -10,4 +10,3 @@ venv/
 *.egg-info/
 dist/
 .DS_Store
-CLAUDE.md
