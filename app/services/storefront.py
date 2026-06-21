@@ -28,11 +28,13 @@ async def business_info(ctx: ERPContext) -> dict:
 
 
 async def search_catalog(ctx: ERPContext, query: str | None = None) -> list[dict]:
-    """Lista lean de productos disponibles. Incluye `id` como ancla para la venta."""
+    """Lista lean de productos disponibles. Incluye `id` como ancla para la venta y
+    `description`/`tags` para que el vendedor matchee la consulta del cliente."""
     rows = await ProductsService().list(ctx, search=query, available=True, limit=50)
     return [
         {"id": r["id"], "name": r["name"], "price": r["price"],
-         "in_stock": float(r.get("stock", 0)) > 0}
+         "in_stock": float(r.get("stock", 0)) > 0,
+         "description": r.get("description") or "", "tags": r.get("tags") or []}
         for r in rows
     ]
 

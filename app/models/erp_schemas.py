@@ -29,6 +29,7 @@ class ProductCreate(BaseModel):
     unit: str = Field(default="unidad", max_length=40)
     available: bool = True
     low_stock_threshold: int = Field(default=5, ge=0)
+    tags: list[str] = Field(default_factory=list)  # keywords para búsqueda/IA vendedora
 
 
 class ProductUpdate(BaseModel):
@@ -43,6 +44,7 @@ class ProductUpdate(BaseModel):
     unit: str | None = Field(default=None, max_length=40)
     available: bool | None = None
     low_stock_threshold: int | None = Field(default=None, ge=0)
+    tags: list[str] | None = None
 
 
 class ProductResponse(BaseModel):
@@ -59,8 +61,23 @@ class ProductResponse(BaseModel):
     available: bool
     has_variants: bool
     low_stock_threshold: int
+    tags: list[str] = Field(default_factory=list)
     stock: float | None = None  # current quantity, joined from inventory when requested
     created_at: str | None = None
+
+
+class ProductImageAnalysis(BaseModel):
+    """Sugerencias del análisis de imagen (Gemini) + la URL ya subida a Storage.
+
+    NO crea el producto: el front muestra esto para editar y luego guarda con
+    POST /erp/products. `ai_ok=False` => Gemini no corrió/falló; completar a mano.
+    """
+
+    image_url: str
+    name: str | None = None
+    description: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    ai_ok: bool
 
 
 class VariantCreate(BaseModel):

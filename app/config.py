@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     # Agno debug: activa logs detallados de mensajes, tools y tokens
     AI_DEBUG: bool = False
 
+    # Gemini: herramienta del front para autodescribir/etiquetar imágenes de productos.
+    # Aislada del bot Agno. Vacío = el análisis se omite (devuelve ai_ok=false).
+    GEMINI_API_KEY: str = ""
+    GEMINI_VISION_MODEL: str = "gemini-2.0-flash"
+    # Bucket de Supabase Storage donde se suben las imágenes optimizadas de productos.
+    PRODUCT_IMAGES_BUCKET: str = "product-images"
+
     # Empty value disables agent responses; any non-empty value enables the bot.
     AI_CORE_URL: str = Field(
         default="",

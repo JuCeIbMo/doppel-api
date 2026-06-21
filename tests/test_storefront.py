@@ -64,7 +64,8 @@ def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
         assert ctx.tenant_id == "t1"
         assert available is True, "search_catalog debe pasar available=True al service"
         all_rows = [
-            {"id": "p1", "name": "Coca 500ml", "price": 1.2, "available": True, "stock": 5},
+            {"id": "p1", "name": "Coca 500ml", "price": 1.2, "available": True, "stock": 5,
+             "description": "Gaseosa cola", "tags": ["bebida", "gaseosa"]},
             {"id": "p2", "name": "Agua", "price": 0.8, "available": True, "stock": 0},
             {"id": "p3", "name": "Oculto", "price": 9.0, "available": False, "stock": 3},
         ]
@@ -74,9 +75,12 @@ def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
         return all_rows
     monkeypatch.setattr("app.services.storefront.ProductsService.list", fake_list)
     result = asyncio.run(storefront.search_catalog(CTX, query="a"))
+    # Enriquecido con description+tags para que el vendedor matchee; faltantes -> "" / [].
     assert result == [
-        {"id": "p1", "name": "Coca 500ml", "price": 1.2, "in_stock": True},
-        {"id": "p2", "name": "Agua", "price": 0.8, "in_stock": False},
+        {"id": "p1", "name": "Coca 500ml", "price": 1.2, "in_stock": True,
+         "description": "Gaseosa cola", "tags": ["bebida", "gaseosa"]},
+        {"id": "p2", "name": "Agua", "price": 0.8, "in_stock": False,
+         "description": "", "tags": []},
     ]
 
 

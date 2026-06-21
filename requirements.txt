@@ -15,6 +15,8 @@ Pillow>=12.2.0
 # AI core (Agno como librería in-process + Whisper para transcripción de audio)
 agno>=2.0.0,<3.0.0
 openai>=1.50.0,<2.0.0
+# Gemini (herramienta del front para autodescribir/etiquetar imágenes de productos)
+google-genai>=1.0.0,<3.0.0
 # Agno PostgresDb requiere SQLAlchemy + psycopg (no los instala por sí mismo)
 sqlalchemy>=2.0.0,<3.0.0
 psycopg[binary]>=3.1.0

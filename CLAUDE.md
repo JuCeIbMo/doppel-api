@@ -63,6 +63,19 @@ Los agentes se diferencian por modo:
 - `client` → `get_client_agent`: tools de lectura de catálogo + `register_sale` + WhatsApp interactivo
 - `manager` → `get_manager_agent`: tools ERP completas (dashboard, stock, ventas, ajustes) + WhatsApp
 
+### Herramienta de imagen de producto (Gemini, separada del bot)
+
+`POST /erp/products/analyze-image` es una herramienta del front, **aislada del bot Agno**:
+recibe una imagen, la optimiza (`app/services/images.py` — WebP cuadrado con fondo blanco),
+la sube a Supabase Storage (`app/services/storage.py`, bucket `product-images`) y la analiza
+con **Gemini** (`app/services/vision.py`, SDK `google-genai`) para sugerir `name`, `description`
+y `tags`. **No crea el producto**: devuelve sugerencias para que el front las edite y guarde con
+`POST /erp/products`. `vision` nunca rompe: sin `GEMINI_API_KEY` o ante un fallo devuelve `ai_ok=false`.
+Esto usa Gemini a propósito y vive fuera de `app/ai/` (que es el bot Claude/OpenAI).
+
+`search_catalog` ahora incluye `description` y `tags` en su shape lean para que el vendedor
+matchee mejor las consultas de los clientes.
+
 ### Convenciones importantes
 
 - **`ok` en respuestas de tools**: `storefront.register_sale` devuelve siempre `{"ok": bool, ...}`. Éxito = `ok: True`, error = `ok: False, "error": code, "message": ...`.
@@ -78,3 +91,5 @@ Los agentes se diferencian por modo:
 | `AI_DEBUG=true` | Activa `debug_mode` de Agno: loguea los prompts completos, tool calls y tokens |
 | `AI_CORE_URL` | Cualquier valor no vacío activa el bot; vacío lo desactiva sin tocar código |
 | `AGNO_DB_URL` | Postgres para Agno. Si está vacío, los agentes corren sin persistencia de sesión |
+| `GEMINI_API_KEY` | Habilita el análisis de imágenes de producto del front (`/erp/products/analyze-image`). Vacío → devuelve `ai_ok=false` sin llamar a la red |
+| `PRODUCT_IMAGES_BUCKET` | Bucket de Supabase Storage para imágenes de producto (default `product-images`) |

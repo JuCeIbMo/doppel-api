@@ -15,7 +15,7 @@ from app.services.supabase_client import get_supabase
 
 _FIELDS = (
     "id, name, description, sku, barcode, category, image_url, cost_price, price, "
-    "unit, available, has_variants, low_stock_threshold, created_at"
+    "unit, available, has_variants, low_stock_threshold, tags, created_at"
 )
 
 

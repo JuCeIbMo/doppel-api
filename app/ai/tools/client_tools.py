@@ -13,8 +13,9 @@ def build_client_tools(ctx: ERPContext) -> list[Callable]:
 
     async def search_catalog(query: str | None = None) -> list:
         """Busca productos disponibles del negocio. Sin `query` lista todo el catálogo;
-        con `query` filtra por nombre. Devuelve [{id, name, price, in_stock}]. Usá el
-        `id` para registrar la venta del producto exacto que mostraste.
+        con `query` filtra por nombre. Devuelve [{id, name, price, in_stock, description,
+        tags}]. Usá `description` y `tags` para elegir el producto que mejor matchea lo
+        que pide el cliente, y el `id` para registrar la venta del producto exacto.
 
         Args:
             query: texto a buscar en el nombre del producto (opcional)

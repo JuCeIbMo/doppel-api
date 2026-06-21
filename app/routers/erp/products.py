@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from app.models.erp_schemas import (
     ImportResult,
     ProductCreate,
+    ProductImageAnalysis,
     ProductResponse,
     ProductUpdate,
     VariantCreate,
@@ -18,6 +19,9 @@ from app.models.erp_schemas import (
 from app.services.erp.context import ERPContext, get_erp_context, log_activity
 from app.services.erp.exceptions import ValidationError
 from app.services.erp.products import ProductsService
+from app.services.images import optimize_image
+from app.services.storage import upload_product_image
+from app.services.vision import analyze_product_image
 
 router = APIRouter()
 service = ProductsService()
@@ -39,6 +43,24 @@ async def list_products(
 @router.post("", response_model=ProductResponse)
 async def create_product(body: ProductCreate, ctx: ERPContext = Depends(get_erp_context)):
     return await service.create(ctx, body.model_dump(exclude_none=True))
+
+
+@router.post("/analyze-image", response_model=ProductImageAnalysis)
+async def analyze_image(
+    file: UploadFile = File(...), ctx: ERPContext = Depends(get_erp_context)
+):
+    """Optimiza la imagen (WebP cuadrado), la sube a Storage y la analiza con Gemini.
+
+    NO crea el producto: devuelve la URL pública + nombre/descripción/tags sugeridos para
+    que el front los edite y luego guarde con POST /erp/products. Si Gemini falla o no está
+    configurado, igual devuelve la `image_url` con `ai_ok=false`.
+    """
+    optimized = optimize_image(await file.read())
+    image_url = upload_product_image(ctx.tenant_id, optimized)
+    analysis = analyze_product_image(optimized, "image/webp")
+    log_activity(ctx, action="product.image_analyzed", module="inventory",
+                 detail={"ai_ok": analysis["ai_ok"]})
+    return ProductImageAnalysis(image_url=image_url, **analysis)
 
 
 @router.get("/barcode/{code}", response_model=ProductResponse)
