@@ -15,14 +15,10 @@ from agno.agent import Agent
 from app.ai.factories.manager_agent import get_manager_agent
 
 
-class _FakeSupabase:
-    def table(self, _n): raise AssertionError("no se debe llamar al construir")
-
-
 def test_get_manager_agent_sets_identity():
     agent = get_manager_agent(
         tenant_id="t1", user_phone="+57999", system_prompt="Eres el admin bot",
-        model_id="claude-sonnet-4-20250514", supabase=_FakeSupabase(),
+        model_id="claude-sonnet-4-20250514",
     )
     assert isinstance(agent, Agent)
     assert agent.user_id == "+57999"

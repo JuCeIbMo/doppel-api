@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from supabase import Client
-
 from app.ai.factories.client_agent import get_client_agent
 from app.ai.factories.manager_agent import get_manager_agent
 from app.ai.media.transcription import prepare_images, transcribe_audio_media
@@ -29,7 +27,6 @@ async def respond(
     content: str,
     system_prompt: str,
     model: str,
-    supabase: Client,
     wa_access_token: str = "",
     wa_phone_number_id: str = "",
     media: list[dict] | None = None,
@@ -59,7 +56,7 @@ async def respond(
         factory = get_manager_agent if mode == "manager" else get_client_agent
         agent = factory(
             tenant_id=tenant_id, user_phone=user_phone,
-            system_prompt=system_prompt, model_id=model, supabase=supabase,
+            system_prompt=system_prompt, model_id=model,
             wa_access_token=wa_access_token, wa_phone_number_id=wa_phone_number_id,
         )
         run = await agent.arun(text, images=images or None)

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     # OpenAI Whisper para transcribir notas de voz de WhatsApp
     OPENAI_API_KEY: str = ""
     AI_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
+    # Agno debug: activa logs detallados de mensajes, tools y tokens
+    AI_DEBUG: bool = False
 
     # Empty value disables agent responses; any non-empty value enables the bot.
     AI_CORE_URL: str = Field(

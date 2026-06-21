@@ -11,12 +11,15 @@ from agno.models.openai import OpenAIChat
 from agno.skills import LocalSkills, Skills
 from agno.tools.whatsapp import WhatsAppTools
 
-from app.ai.config import AGNO_DB_URL, DEFAULT_MODEL
+from app.ai.config import AGNO_DB_URL, DEBUG, DEFAULT_MODEL
 
 _SKILLS_DIR = Path(__file__).parent.parent.parent.parent / "skills"
 
 # Prefijos de los ids de modelos de OpenAI (gpt-4o, gpt-4o-mini, o1/o3/o4, chatgpt-*).
 _OPENAI_PREFIXES = ("gpt", "o1", "o3", "o4", "chatgpt")
+
+# Singleton: un solo pool de conexiones para todos los agentes del proceso.
+_DB: PostgresDb | None = PostgresDb(db_url=AGNO_DB_URL) if AGNO_DB_URL else None
 
 
 def session_id_for(tenant_id: str, user_phone: str) -> str:
@@ -24,8 +27,8 @@ def session_id_for(tenant_id: str, user_phone: str) -> str:
     return f"{tenant_id}:{user_phone}"
 
 
-def build_db() -> PostgresDb:
-    return PostgresDb(db_url=AGNO_DB_URL)
+def build_db() -> PostgresDb | None:
+    return _DB
 
 
 def _resolve_model(model_id: str) -> Model | None:

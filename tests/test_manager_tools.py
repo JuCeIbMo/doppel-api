@@ -17,12 +17,8 @@ os.environ.setdefault("AGNO_DB_URL", "postgresql+psycopg://ai:ai@localhost:5532/
 from app.ai.tools.manager_tools import build_manager_tools
 
 
-class _FakeSupabase:
-    def table(self, _n): raise AssertionError("las tools llaman a ERP services, no supabase directo")
-
-
 def test_build_manager_tools_names():
-    tools = build_manager_tools(_FakeSupabase(), "t1")
+    tools = build_manager_tools("t1")
     assert {t.__name__ for t in tools} == {
         "get_dashboard_summary", "get_stock", "get_top_products",
         "create_sale", "adjust_stock",

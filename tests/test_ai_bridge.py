@@ -33,7 +33,7 @@ def _run(mode, content, media=None):
         return asyncio.run(bridge.respond(
             mode=mode, tenant_id="t1", user_phone="+57300",
             content=content, system_prompt="p", model="m",
-            supabase=object(), media=media,
+            media=media,
         ))
 
 
@@ -51,6 +51,6 @@ def test_none_reply_on_agent_error():
          patch.object(bridge, "prepare_images", return_value=[]):
         out = asyncio.run(bridge.respond(
             mode="client", tenant_id="t1", user_phone="+57300",
-            content="hola", system_prompt="p", model="m", supabase=object(), media=None,
+            content="hola", system_prompt="p", model="m", media=None,
         ))
     assert out is None

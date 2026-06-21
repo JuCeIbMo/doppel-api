@@ -19,15 +19,10 @@ from agno.agent import Agent
 from app.ai.factories.client_agent import get_client_agent
 
 
-class _FakeSupabase:
-    def table(self, _n):
-        raise AssertionError("no se debe llamar al construir")
-
-
 def test_get_client_agent_sets_identity():
     agent = get_client_agent(
         tenant_id="t1", user_phone="+57300", system_prompt="Eres un bot",
-        model_id="claude-sonnet-4-20250514", supabase=_FakeSupabase(),
+        model_id="claude-sonnet-4-20250514",
     )
     assert isinstance(agent, Agent)
     assert agent.user_id == "+57300"
@@ -51,7 +46,7 @@ def test_client_agent_injects_business_info_dependency(monkeypatch):
 
     mod.get_client_agent(
         tenant_id="t1", user_phone="+549110", system_prompt="hola",
-        model_id=None, supabase=object())
+        model_id=None)
 
     assert captured["add_dependencies_to_context"] is True
     assert "business_info" in captured["dependencies"]

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from agno.agent import Agent
-from supabase import Client
 
+from app.ai.config import DEBUG
 from app.ai.factories.base import build_db, build_model, build_skills, build_whatsapp_tools, session_id_for
 from app.ai.tools.client_tools import build_client_tools
 from app.services import storefront
@@ -17,7 +17,6 @@ def get_client_agent(
     user_phone: str,
     system_prompt: str,
     model_id: str | None,
-    supabase: Client,
     wa_access_token: str = "",
     wa_phone_number_id: str = "",
 ) -> Agent:
@@ -56,6 +55,7 @@ def get_client_agent(
         add_history_to_context=True,
         num_history_runs=5,
         markdown=False,
+        debug_mode=DEBUG,
         dependencies={"business_info": _business_info},
         add_dependencies_to_context=True,
     )

@@ -318,7 +318,6 @@ async def _process_bot_response(
             content=inbound_text,
             system_prompt=system_prompt,
             model=str(config.get("ai_model") or "claude-sonnet-4-20250514"),
-            supabase=supabase,
             wa_access_token=access_token,
             wa_phone_number_id=wa_account["phone_number_id"],
             media=media,

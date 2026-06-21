@@ -6,8 +6,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Callable
 
-from supabase import Client
-
 from app.services.erp.clients import ClientsService
 from app.services.erp.context import bot_context
 from app.services.erp.exceptions import ERPError, NotFound
@@ -28,7 +26,7 @@ def _period_dates(period: str, dfrom: str | None, dto: str | None) -> tuple[str,
     return today.replace(day=1).isoformat(), today.isoformat()
 
 
-def build_manager_tools(supabase: Client, tenant_id: str) -> list[Callable]:
+def build_manager_tools(tenant_id: str) -> list[Callable]:
     ctx = bot_context(tenant_id, actor="admin_bot")
 
     async def get_dashboard_summary(
