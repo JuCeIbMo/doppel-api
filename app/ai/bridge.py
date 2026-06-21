@@ -33,7 +33,7 @@ async def respond(
     wa_access_token: str = "",
     wa_phone_number_id: str = "",
     media: list[dict] | None = None,
-) -> str:
+) -> str | None:
     """Ejecuta el agente correspondiente y devuelve el texto final ('' si falla)."""
     media_types = [m.get("type") for m in (media or [])]
     logger.debug(
@@ -74,4 +74,4 @@ async def respond(
         logger.exception(
             "respuesta IA falló tenant=%s phone=%s mode=%s", tenant_id, user_phone, mode
         )
-        return ""
+        return None

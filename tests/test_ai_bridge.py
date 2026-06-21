@@ -45,7 +45,7 @@ def test_manager_mode_uses_manager_agent():
     assert _run("manager", "hola") == "hola admin"
 
 
-def test_empty_reply_on_agent_error():
+def test_none_reply_on_agent_error():
     with patch.object(bridge, "get_client_agent", side_effect=RuntimeError("boom")), \
          patch.object(bridge, "transcribe_audio_media", new=AsyncMock(return_value="")), \
          patch.object(bridge, "prepare_images", return_value=[]):
@@ -53,4 +53,4 @@ def test_empty_reply_on_agent_error():
             mode="client", tenant_id="t1", user_phone="+57300",
             content="hola", system_prompt="p", model="m", supabase=object(), media=None,
         ))
-    assert out == ""
+    assert out is None

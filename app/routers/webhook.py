@@ -311,7 +311,7 @@ async def _process_bot_response(
         # remains the inbound/outbound log for the dashboard.
         system_prompt = _select_system_prompt(config=config, mode=mode)
 
-        ai_text = (await ai_respond(
+        ai_response = await ai_respond(
             mode=mode,
             tenant_id=tenant_id,
             user_phone=user_phone,
@@ -322,7 +322,14 @@ async def _process_bot_response(
             wa_access_token=access_token,
             wa_phone_number_id=wa_account["phone_number_id"],
             media=media,
-        )).strip()
+        )
+        if ai_response is None:
+            logger.error(
+                "[BOT_CRASH] agente falló internamente tenant=%s phone=%s mode=%s",
+                tenant_id, user_phone, mode,
+            )
+            return
+        ai_text = ai_response.strip()
         if not ai_text:
             logger.warning(
                 "Empty agent response tenant=%s phone=%s mode=%s",
