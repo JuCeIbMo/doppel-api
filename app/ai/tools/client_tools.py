@@ -6,11 +6,10 @@ from __future__ import annotations
 from typing import Callable
 
 from app.services import storefront
-from app.services.erp.context import bot_context
+from app.services.erp.context import ERPContext
 
 
-def build_client_tools(tenant_id: str) -> list[Callable]:
-    ctx = bot_context(tenant_id, actor="whatsapp_bot")
+def build_client_tools(ctx: ERPContext) -> list[Callable]:
 
     async def search_catalog(query: str | None = None) -> list:
         """Busca productos disponibles del negocio. Sin `query` lista todo el catálogo;

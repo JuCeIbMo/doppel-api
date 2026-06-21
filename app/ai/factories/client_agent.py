@@ -1,4 +1,4 @@
-"""Factory del client agent: atiende clientes finales, solo tools read-only."""
+"""Factory del client agent: atiende clientes finales vía WhatsApp."""
 
 from __future__ import annotations
 
@@ -21,7 +21,8 @@ def get_client_agent(
     wa_access_token: str = "",
     wa_phone_number_id: str = "",
 ) -> Agent:
-    tools = build_client_tools(tenant_id)
+    ctx = bot_context(tenant_id, actor="whatsapp_bot")
+    tools = build_client_tools(ctx)
     wa_tools = build_whatsapp_tools(
         access_token=wa_access_token,
         phone_number_id=wa_phone_number_id,
@@ -33,8 +34,6 @@ def get_client_agent(
     )
     if wa_tools:
         tools.append(wa_tools)
-
-    ctx = bot_context(tenant_id, actor="whatsapp_bot")
 
     async def _business_info() -> dict:
         return await storefront.business_info(ctx)
