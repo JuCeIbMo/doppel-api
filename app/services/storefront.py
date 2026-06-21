@@ -47,7 +47,7 @@ async def register_sale(
     usando el id que la IA ya obtuvo de search_catalog (no re-resuelve por nombre).
     Delega en SalesService.create_sale (atómico). Devuelve confirmación lean."""
     if not items:
-        return {"error": "validation_error",
+        return {"ok": False, "error": "validation_error",
                 "message": "Se requiere al menos un ítem", "detail": {}}
 
     client_id = None
@@ -68,7 +68,7 @@ async def register_sale(
     try:
         sale = await SalesService().create_sale(ctx, body)
     except ERPError as exc:
-        return {"error": exc.code, "message": exc.message, "detail": exc.detail}
+        return {"ok": False, "error": exc.code, "message": exc.message, "detail": exc.detail}
 
     return {
         "ok": True,

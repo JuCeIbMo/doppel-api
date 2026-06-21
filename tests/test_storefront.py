@@ -153,10 +153,12 @@ def test_register_sale_insufficient_stock_returns_error(monkeypatch):
 
     result = asyncio.run(storefront.register_sale(
         CTX, items=[{"product_id": "p1", "quantity": 2}]))
+    assert result["ok"] is False
     assert result["error"] == "insufficient_stock"
     assert "message" in result and "detail" in result
 
 
 def test_register_sale_requires_items():
     result = asyncio.run(storefront.register_sale(CTX, items=[]))
+    assert result["ok"] is False
     assert result["error"] == "validation_error"
