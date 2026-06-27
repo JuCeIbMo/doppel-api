@@ -18,21 +18,18 @@ from app.ai.agents import client as client_mod
 
 
 def test_client_respond_returns_text(monkeypatch):
-    async def fake_business_info(ctx):
-        return {"name": "Demo"}
-
     async def fake_search(ctx, query=None):
         return []
 
     async def fake_sale(ctx, items, customer_phone=None, payment_method="whatsapp"):
         return {"ok": True}
 
-    monkeypatch.setattr(storefront, "business_info", fake_business_info)
     monkeypatch.setattr(storefront, "search_catalog", fake_search)
     monkeypatch.setattr(storefront, "register_sale", fake_sale)
 
     # Forzamos TestModel como modelo del run vía override del agente.
-    with client_mod.client_agent.override(model=TestModel(custom_output_text="hola!")):
+    # call_tools=[]: no llama ninguna tool (evita que invente un id para load_capability).
+    with client_mod.client_agent.override(model=TestModel(call_tools=[], custom_output_text="hola!")):
         out = asyncio.run(respond(
             mode="client", tenant_id="t1", user_phone="555",
             content="buenas", system_prompt="Sos vendedor.", model="claude-sonnet-4-20250514",

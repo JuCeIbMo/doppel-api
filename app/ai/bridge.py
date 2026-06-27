@@ -6,7 +6,8 @@ import logging
 from typing import Literal
 
 from app.ai import history
-from app.ai.agents.client import ClientDeps, client_agent
+from app.ai.agents.client import MODEL as CLIENT_MODEL
+from app.ai.agents.client import client_agent
 from app.ai.agents.manager import ManagerDeps, manager_agent
 from app.ai.media import prepare_images
 from app.ai.model import model_string
@@ -53,18 +54,21 @@ async def respond(
 
         session_id = history.session_id_for(tenant_id, user_phone)
         if mode == "manager":
-            agent = manager_agent
+            # El manager todavía toma su prompt y modelo del tenant.
             deps = ManagerDeps(ctx=bot_context(tenant_id, actor="admin_bot"),
                                system_prompt=system_prompt)
+            result = await manager_agent.run(
+                prompt, deps=deps, model=model_string(model),
+                message_history=history.load(session_id),
+            )
         else:
-            agent = client_agent
-            deps = ClientDeps(ctx=bot_context(tenant_id, actor="whatsapp_bot"),
-                              system_prompt=system_prompt)
-
-        result = await agent.run(
-            prompt, deps=deps, model=model_string(model),
-            message_history=history.load(session_id),
-        )
+            # El vendedor es autocontenido: modelo (CLIENT_MODEL) e instrucciones
+            # viven en client.py. Lo único que le pasamos es el tenant (deps).
+            result = await client_agent.run(
+                prompt, model=CLIENT_MODEL,
+                deps=bot_context(tenant_id, actor="whatsapp_bot"),
+                message_history=history.load(session_id),
+            )
         history.append(session_id, result.new_messages())
 
         reply = (result.output or "").strip()
