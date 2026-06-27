@@ -7,7 +7,8 @@ from typing import Literal
 
 from app.ai.factories.client_agent import get_client_agent
 from app.ai.factories.manager_agent import get_manager_agent
-from app.ai.media.transcription import prepare_images, transcribe_audio_media
+from app.ai.media import prepare_images
+from app.ai.transcription import transcribe_audio_media
 
 logger = logging.getLogger("doppel.ai.bridge")
 

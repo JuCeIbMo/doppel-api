@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from app.ai.media.transcription import transcribe_audio_media
+from app.ai.transcription import transcribe_audio_media
 from app.ai.pydantic_spike import history
 from app.ai.pydantic_spike.agent import ClientDeps, client_agent
 from app.ai.pydantic_spike.media import prepare_images
