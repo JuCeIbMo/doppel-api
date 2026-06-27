@@ -19,6 +19,9 @@ services:
       AGNO_DB_URL: postgresql+psycopg://ai:ai@agno-postgres:5432/agno
       # Flag de "bot activado": cualquier valor no vacío activa el bot.
       AI_CORE_URL: enabled
+      # SPIKE (rama spike/pydantic-ai): enruta el client agent por Pydantic AI
+      # en vez de Agno. El modo manager sigue en Agno. Quitar para volver a Agno.
+      AI_PYDANTIC_SPIKE: "true"
     depends_on:
       agno-postgres:
         condition: service_healthy

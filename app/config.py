@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     AI_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
     # Agno debug: activa logs detallados de mensajes, tools y tokens
     AI_DEBUG: bool = False
+    # Spike: enruta el client agent por Pydantic AI en vez de Agno (comparación).
+    AI_PYDANTIC_SPIKE: bool = False
 
     # Gemini: herramienta del front para autodescribir/etiquetar imágenes de productos.
     # Aislada del bot Agno. Vacío = el análisis se omite (devuelve ai_ok=false).

@@ -9,3 +9,4 @@ AGNO_DB_URL: str = settings.AGNO_DB_URL
 OPENAI_API_KEY: str = settings.OPENAI_API_KEY
 DEFAULT_MODEL: str = settings.AI_DEFAULT_MODEL
 DEBUG: bool = settings.AI_DEBUG
+PYDANTIC_SPIKE: bool = settings.AI_PYDANTIC_SPIKE
