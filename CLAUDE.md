@@ -14,7 +14,7 @@ python3 -m pytest tests/test_storefront.py::test_register_sale_happy_path -v
 # Arrancar el servidor localmente (requiere .env)
 uvicorn app.main:app --reload
 
-# Arrancar con Docker Compose (incluye Postgres para Agno)
+# Arrancar con Docker Compose (incluye chat-postgres para historial)
 docker compose up
 ```
 
@@ -27,7 +27,7 @@ docker compose up
 ### Dos bases de datos
 
 - **Supabase** (Postgres gestionado): datos del ERP — productos, ventas, clientes, cuentas de WhatsApp, configuración del bot. El cliente es **síncrono** (`supabase-py`). Todos los services llaman `get_supabase()` (singleton en `app/services/supabase_client.py`).
-- **Agno Postgres** (container propio, `AGNO_DB_URL`): historial de conversaciones y memoria de los agentes IA. Lo gestiona Agno vía `PostgresDb` (singleton en `app/ai/factories/base.py`).
+- **Chat Postgres** (container propio, `CHAT_DB_URL`): historial de conversaciones de los agentes IA. Lo escribe `app/ai/history.py` con `psycopg` directo (sin ORM). Si `CHAT_DB_URL` está vacío, el historial corre en memoria de proceso (dev/tests).
 
 ### Capa ERP
 
@@ -41,7 +41,7 @@ ERPContext(tenant_id, actor)  ←  construido por:
 
 Los services nunca lanzan `HTTPException`. Lanzan subclases de `ERPError` (`NotFound`, `InsufficientStock`, `Conflict`, etc.) que el handler global de `main.py` convierte a JSON.
 
-### Capa de IA (Agno in-process)
+### Capa de IA (Pydantic AI in-process)
 
 El bot vive dentro del proceso doppel-api (no es un microservicio separado). Flujo por mensaje:
 
@@ -49,23 +49,31 @@ El bot vive dentro del proceso doppel-api (no es un microservicio separado). Flu
 POST /webhook/whatsapp
   → _process_bot_response() [background task]
     → app/ai/bridge.respond()          ← única puerta pública del subsistema AI
-      → get_client_agent() / get_manager_agent()
-        → agent.arun(text)
+      → client_agent / manager_agent   (app/ai/agents/)
+        → agent.run(prompt, deps=..., model=model_string(...),
+                    message_history=history.load(session_id))
           → storefront.search_catalog / register_sale  (client)
-          → ERP services directamente                  (manager)
+          → get_dashboard_summary / get_stock           (manager, solo lectura)
+        → history.append(session_id, result.new_messages())
 ```
 
 **`app/services/storefront.py`** es la capa que expone el ERP al agente vendedor. Devuelve shapes "lean" (solo lo que la IA necesita) y evita que el bot toque los ERP services directamente.
 
 **`app/ai/__init__.py`** re-exporta solo `respond` — es la única interfaz pública del módulo AI.
 
+**`app/ai/model.py`** enruta por prefijo de `model_string`: `claude-*` → Anthropic, `gpt-*/o-series` → OpenAI.
+
+**`app/ai/media.py`** convierte adjuntos de imagen a `BinaryContent` para Pydantic AI. **`app/ai/transcription.py`** transcribe audio/voice vía Whisper antes de pasarlo al agente como texto.
+
+**`app/ai/history.py`** carga y persiste el historial alrededor de cada `agent.run(...)` usando `ModelMessagesTypeAdapter` de Pydantic AI y `psycopg` directo contra `CHAT_DB_URL`. Best-effort: un fallo de Postgres se loguea pero no interrumpe la respuesta.
+
 Los agentes se diferencian por modo:
-- `client` → `get_client_agent`: tools de lectura de catálogo + `register_sale` + WhatsApp interactivo
-- `manager` → `get_manager_agent`: tools ERP completas (dashboard, stock, ventas, ajustes) + WhatsApp
+- `client` (`app/ai/agents/client.py`): tools `search_catalog` + `register_sale`; deps `ClientDeps(ctx, system_prompt)`
+- `manager` (`app/ai/agents/manager.py`): tools de solo lectura `get_dashboard_summary` + `get_stock`; deps `ManagerDeps(ctx, system_prompt)`
 
 ### Herramienta de imagen de producto (Gemini, separada del bot)
 
-`POST /erp/products/analyze-image` es una herramienta del front, **aislada del bot Agno**:
+`POST /erp/products/analyze-image` es una herramienta del front, **aislada del bot Pydantic AI**:
 recibe una imagen, la optimiza (`app/services/images.py` — WebP cuadrado con fondo blanco),
 la sube a Supabase Storage (`app/services/storage.py`, bucket `product-images`) y la analiza
 con **Gemini** (`app/services/vision.py`, SDK `google-genai`) para sugerir `name`, `description`
@@ -88,8 +96,7 @@ matchee mejor las consultas de los clientes.
 | Variable | Efecto |
 |----------|--------|
 | `LOG_LEVEL=DEBUG` | Activa todos los `logger.debug(...)` del código doppel-api (bridge, webhook, erp) |
-| `AI_DEBUG=true` | Activa `debug_mode` de Agno: loguea los prompts completos, tool calls y tokens |
 | `AI_CORE_URL` | Cualquier valor no vacío activa el bot; vacío lo desactiva sin tocar código |
-| `AGNO_DB_URL` | Postgres para Agno. Si está vacío, los agentes corren sin persistencia de sesión |
+| `CHAT_DB_URL` | Postgres dedicado para historial de conversaciones. Vacío → historial en memoria de proceso (dev/tests) |
 | `GEMINI_API_KEY` | Habilita el análisis de imágenes de producto del front (`/erp/products/analyze-image`). Vacío → devuelve `ai_ok=false` sin llamar a la red |
 | `PRODUCT_IMAGES_BUCKET` | Bucket de Supabase Storage para imágenes de producto (default `product-images`) |
