@@ -31,7 +31,7 @@ from app.services import storefront
 from app.services.erp.context import ERPContext
 
 # Modelo del vendedor. Único lugar donde se decide con qué LLM atiende.
-MODEL = "anthropic:claude-sonnet-4-6"
+MODEL = "openai:gpt-5.4-mini"
 
 INSTRUCTIONS = """\
 Sos un vendedor por WhatsApp, simpático y directo. Atendés en español rioplatense.
