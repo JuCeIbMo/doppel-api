@@ -8,7 +8,7 @@ from openai import AsyncOpenAI
 
 from app.ai.config import OPENAI_API_KEY
 
-logger = logging.getLogger("doppel.ai.media")
+logger = logging.getLogger("doppel.ai.transcription")
 
 _AUDIO_TYPES = {"audio", "voice"}
 

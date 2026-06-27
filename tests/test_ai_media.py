@@ -1,5 +1,4 @@
 import os
-import tempfile
 
 os.environ.setdefault("META_APP_ID", "test-app-id")
 os.environ.setdefault("META_APP_SECRET", "test-app-secret")
@@ -13,11 +12,10 @@ from pydantic_ai import BinaryContent
 from app.ai.media import prepare_images
 
 
-def test_prepare_images_reads_local_file():
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
-        f.write(b"\xff\xd8\xff\xe0fake-jpeg")
-        path = f.name
-    out = prepare_images([{"type": "image", "local_path": path}])
+def test_prepare_images_reads_local_file(tmp_path):
+    img = tmp_path / "test.jpg"
+    img.write_bytes(b"\xff\xd8\xff\xe0fake-jpeg")
+    out = prepare_images([{"type": "image", "local_path": str(img)}])
     assert len(out) == 1
     assert isinstance(out[0], BinaryContent)
     assert out[0].media_type == "image/jpeg"

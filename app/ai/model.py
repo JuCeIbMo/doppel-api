@@ -25,5 +25,7 @@ def model_string(model_id: str | None) -> str:
     if provider:
         return f"{provider}:{mid}"
     default = DEFAULT_MODEL.strip()
+    if not default:
+        default = "claude-sonnet-4-20250514"
     provider = _provider_for(default) or "anthropic"
     return f"{provider}:{default}"

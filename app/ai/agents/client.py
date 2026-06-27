@@ -7,6 +7,7 @@ finos sobre `storefront` que leen el ERPContext desde `RunContext.deps`.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from pydantic_ai import Agent, RunContext
@@ -33,11 +34,11 @@ def tenant_system_prompt(ctx: RunContext[ClientDeps]) -> str:
 @client_agent.instructions
 async def business_info_block(ctx: RunContext[ClientDeps]) -> str:
     info = await storefront.business_info(ctx.deps.ctx)
-    return f"Información del negocio:\n{info}"
+    return f"Información del negocio:\n{json.dumps(info, ensure_ascii=False)}"
 
 
 @client_agent.tool
-async def search_catalog(ctx: RunContext[ClientDeps], query: str | None = None) -> list:
+async def search_catalog(ctx: RunContext[ClientDeps], query: str | None = None) -> list[dict]:
     """Busca productos disponibles del negocio. Sin `query` lista todo el catálogo;
     con `query` filtra por nombre. Devuelve [{id, name, price, in_stock, description,
     tags}]. Usá `description` y `tags` para elegir el producto que mejor matchea lo
@@ -52,7 +53,7 @@ async def search_catalog(ctx: RunContext[ClientDeps], query: str | None = None) 
 @client_agent.tool
 async def register_sale(
     ctx: RunContext[ClientDeps],
-    items: list,
+    items: list[dict],
     customer_phone: str | None = None,
     payment_method: str = "whatsapp",
 ) -> dict:
