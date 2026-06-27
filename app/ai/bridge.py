@@ -1,14 +1,17 @@
-"""Puente entre el webhook y los agentes Agno. Entrada única por mensaje."""
+"""Puente entre el webhook y los agentes Pydantic AI. Entrada única por mensaje."""
 
 from __future__ import annotations
 
 import logging
 from typing import Literal
 
-from app.ai.factories.client_agent import get_client_agent
-from app.ai.factories.manager_agent import get_manager_agent
+from app.ai import history
+from app.ai.agents.client import ClientDeps, client_agent
+from app.ai.agents.manager import ManagerDeps, manager_agent
 from app.ai.media import prepare_images
+from app.ai.model import model_string
 from app.ai.transcription import transcribe_audio_media
+from app.services.erp.context import bot_context
 
 logger = logging.getLogger("doppel.ai.bridge")
 
@@ -32,11 +35,10 @@ async def respond(
     wa_phone_number_id: str = "",
     media: list[dict] | None = None,
 ) -> str | None:
-    """Ejecuta el agente correspondiente y devuelve el texto final ('' si falla)."""
-    media_types = [m.get("type") for m in (media or [])]
+    """Corre el agente correspondiente. None = crash, '' = vacío legítimo."""
     logger.debug(
-        "[START] tenant=%s phone=%s mode=%s model=%s media=%s texto_chars=%d",
-        tenant_id, user_phone, mode, model, media_types, len(content or ""),
+        "[START] tenant=%s phone=%s mode=%s model=%s texto_chars=%d",
+        tenant_id, user_phone, mode, model, len(content or ""),
     )
     try:
         transcript = await transcribe_audio_media(media)
@@ -45,31 +47,29 @@ async def respond(
         text_parts = [content] if content else []
         if transcript:
             text_parts.append(f"[Nota de voz]: {transcript}")
-            logger.debug("[TRANSCRIPCION] tenant=%s chars=%d", tenant_id, len(transcript))
-        text = "\n".join(text_parts) + _document_note(media)
-        text = text.strip()
+        text = ("\n".join(text_parts) + _document_note(media)).strip()
 
-        logger.debug(
-            "[INPUT_AGENTE] tenant=%s mode=%s imagenes=%d texto_final=%r",
-            tenant_id, mode, len(images), text[:120],
-        )
+        prompt: list | str = [text, *images] if images else text
 
-        factory = get_manager_agent if mode == "manager" else get_client_agent
-        agent = factory(
-            tenant_id=tenant_id, user_phone=user_phone,
-            system_prompt=system_prompt, model_id=model,
-            wa_access_token=wa_access_token, wa_phone_number_id=wa_phone_number_id,
-        )
-        run = await agent.arun(text, images=images or None)
-        reply = (run.content or "").strip()
+        session_id = history.session_id_for(tenant_id, user_phone)
+        if mode == "manager":
+            agent = manager_agent
+            deps = ManagerDeps(ctx=bot_context(tenant_id, actor="admin_bot"),
+                               system_prompt=system_prompt)
+        else:
+            agent = client_agent
+            deps = ClientDeps(ctx=bot_context(tenant_id, actor="whatsapp_bot"),
+                              system_prompt=system_prompt)
 
-        logger.debug(
-            "[OUTPUT_AGENTE] tenant=%s mode=%s chars=%d respuesta=%r",
-            tenant_id, mode, len(reply), reply[:120],
+        result = await agent.run(
+            prompt, deps=deps, model=model_string(model),
+            message_history=history.load(session_id),
         )
+        history.append(session_id, result.new_messages())
+
+        reply = (result.output or "").strip()
+        logger.debug("[OUTPUT] tenant=%s mode=%s chars=%d", tenant_id, mode, len(reply))
         return reply
     except Exception:
-        logger.exception(
-            "respuesta IA falló tenant=%s phone=%s mode=%s", tenant_id, user_phone, mode
-        )
+        logger.exception("respuesta IA falló tenant=%s phone=%s mode=%s", tenant_id, user_phone, mode)
         return None
