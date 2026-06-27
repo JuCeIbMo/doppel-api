@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     AI_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
     # Agno debug: activa logs detallados de mensajes, tools y tokens
     AI_DEBUG: bool = False
+    # Postgres dedicado para el historial de conversaciones del bot (Pydantic AI).
+    # Vacío → el historial corre en memoria (dev/tests sin Postgres).
+    CHAT_DB_URL: str = ""
     # Spike: enruta el client agent por Pydantic AI en vez de Agno (comparación).
     AI_PYDANTIC_SPIKE: bool = False
 
