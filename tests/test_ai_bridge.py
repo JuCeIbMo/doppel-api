@@ -13,6 +13,7 @@ from pydantic_ai.models.test import TestModel
 
 import app.services.storefront as storefront
 from app.ai import respond
+from app.ai import history
 from app.ai.agents import client as client_mod
 
 
@@ -38,3 +39,14 @@ def test_client_respond_returns_text(monkeypatch):
         ))
     assert isinstance(out, str)
     assert out == "hola!"
+
+
+def test_crash_returns_none(monkeypatch):
+    def boom(_):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(history, "load", boom)
+    out = asyncio.run(respond(
+        mode="client", tenant_id="t1", user_phone="555",
+        content="x", system_prompt="p", model="claude-sonnet-4-20250514",
+    ))
+    assert out is None

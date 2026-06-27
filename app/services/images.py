@@ -1,6 +1,6 @@
 """Tratamiento de imágenes de productos (Pillow).
 
-Herramienta del front, aislada del bot Agno. Normaliza la foto subida a un tile de
+Herramienta del front, aislada del bot. Normaliza la foto subida a un tile de
 catálogo consistente: corrige orientación EXIF, encuadra en un cuadrado con fondo
 blanco y comprime a WebP. Devuelve los bytes listos para subir a Storage.
 """

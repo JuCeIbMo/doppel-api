@@ -306,7 +306,7 @@ async def _process_bot_response(
             media=media,
         )
 
-        # Conversation history is owned by the ai-core (Agno) per-user session in
+        # Conversation history is owned by the ai subsystem per-user session in
         # its own Postgres; the API no longer loads/sends it. Supabase `messages`
         # remains the inbound/outbound log for the dashboard.
         system_prompt = _select_system_prompt(config=config, mode=mode)

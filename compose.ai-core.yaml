@@ -1,7 +1,7 @@
 # ⚠️ ALIAS DE COMPATIBILIDAD — NO EDITAR AQUÍ.
 # La fuente de verdad es compose.yaml. Este archivo existe solo porque Dokploy
 # todavía apunta su "Compose Path" a ./compose.ai-core.yaml. Mantiene el deploy
-# funcionando con la arquitectura nueva (doppel-api + Agno in-process + Postgres)
+# funcionando con la arquitectura nueva (doppel-api + Pydantic AI in-process + Postgres)
 # sin tener que cambiar el campo en el panel.
 # Si cambias el Compose Path a ./compose.yaml en Dokploy, borra este archivo.
 # Cualquier cambio real va en compose.yaml y luego se copia aquí.
@@ -14,36 +14,32 @@ services:
     env_file:
       - .env
     environment:
-      # El bot Agno corre dentro de doppel-api y guarda historial/memoria aquí.
-      # El host es el nombre del servicio Postgres de abajo (no localhost).
-      AGNO_DB_URL: postgresql+psycopg://ai:ai@agno-postgres:5432/agno
+      # Postgres dedicado para el historial de conversaciones del bot (Pydantic AI).
+      CHAT_DB_URL: postgresql://ai:ai@chat-postgres:5432/chat
       # Flag de "bot activado": cualquier valor no vacío activa el bot.
       AI_CORE_URL: enabled
-      # SPIKE (rama spike/pydantic-ai): enruta el client agent por Pydantic AI
-      # en vez de Agno. El modo manager sigue en Agno. Quitar para volver a Agno.
-      AI_PYDANTIC_SPIKE: "true"
     depends_on:
-      agno-postgres:
+      chat-postgres:
         condition: service_healthy
     ports:
       - "8000:8000"
     restart: unless-stopped
 
-  agno-postgres:
-    image: pgvector/pgvector:pg17
-    container_name: agno-postgres
+  chat-postgres:
+    image: postgres:17
+    container_name: chat-postgres
     environment:
-      POSTGRES_DB: agno
+      POSTGRES_DB: chat
       POSTGRES_USER: ai
       POSTGRES_PASSWORD: ai
     volumes:
-      - agno-postgres-data:/var/lib/postgresql/data
+      - chat-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ai -d agno"]
+      test: ["CMD-SHELL", "pg_isready -U ai -d chat"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
 volumes:
-  agno-postgres-data:
+  chat-postgres-data:

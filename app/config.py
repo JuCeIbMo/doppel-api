@@ -35,21 +35,15 @@ class Settings(BaseSettings):
     META_API_RETRY_DELAY_MS: int = 300
     ANTHROPIC_API_RETRIES: int = 2
 
-    # Agno (Postgres separado para historial/memoria de los agentes)
-    AGNO_DB_URL: str = ""
     # OpenAI Whisper para transcribir notas de voz de WhatsApp
     OPENAI_API_KEY: str = ""
     AI_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
-    # Agno debug: activa logs detallados de mensajes, tools y tokens
-    AI_DEBUG: bool = False
     # Postgres dedicado para el historial de conversaciones del bot (Pydantic AI).
     # Vacío → el historial corre en memoria (dev/tests sin Postgres).
     CHAT_DB_URL: str = ""
-    # Spike: enruta el client agent por Pydantic AI en vez de Agno (comparación).
-    AI_PYDANTIC_SPIKE: bool = False
 
     # Gemini: herramienta del front para autodescribir/etiquetar imágenes de productos.
-    # Aislada del bot Agno. Vacío = el análisis se omite (devuelve ai_ok=false).
+    # Aislada del bot. Vacío = el análisis se omite (devuelve ai_ok=false).
     GEMINI_API_KEY: str = ""
     GEMINI_VISION_MODEL: str = "gemini-2.0-flash"
     # Bucket de Supabase Storage donde se suben las imágenes optimizadas de productos.

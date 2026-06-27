@@ -5,9 +5,6 @@ from __future__ import annotations
 
 from app.config import settings
 
-AGNO_DB_URL: str = settings.AGNO_DB_URL
 OPENAI_API_KEY: str = settings.OPENAI_API_KEY
 DEFAULT_MODEL: str = settings.AI_DEFAULT_MODEL
 CHAT_DB_URL: str = settings.CHAT_DB_URL
-DEBUG: bool = settings.AI_DEBUG
-PYDANTIC_SPIKE: bool = settings.AI_PYDANTIC_SPIKE

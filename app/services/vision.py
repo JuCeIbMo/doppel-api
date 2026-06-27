@@ -1,6 +1,6 @@
 """Análisis de imágenes de productos con Gemini (autodescripción/etiquetado).
 
-Herramienta del front, AISLADA del bot Agno (`app/ai/`, que usa Claude/OpenAI). Dada la
+Herramienta del front, AISLADA del bot (`app/ai/`). Dada la
 foto de un producto, sugiere nombre comercial, descripción de venta y tags de búsqueda
 pensados para que el agente vendedor matchee consultas de clientes.
 

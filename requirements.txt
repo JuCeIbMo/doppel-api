@@ -12,14 +12,10 @@ openpyxl>=3.1.0,<4.0.0
 reportlab>=4.0.0,<5.0.0
 python-barcode>=0.15.0,<1.0.0
 Pillow>=12.2.0
-# AI core (Agno como librería in-process + Whisper para transcripción de audio)
-agno>=2.0.0,<3.0.0
-# SPIKE Pydantic AI (rama spike/pydantic-ai): client agent alternativo a Agno.
-# Trae openai 2.x, por eso se sube el pin de openai (Whisper sigue compatible).
+# AI bot in-process sobre Pydantic AI + Whisper para transcripción de audio.
 pydantic-ai-slim[anthropic,openai]>=2.0.0,<3.0.0
 openai>=1.50.0,<3.0.0
+# Historial de conversaciones en Postgres dedicado (psycopg directo, sin ORM).
+psycopg[binary]>=3.1.0
 # Gemini (herramienta del front para autodescribir/etiquetar imágenes de productos)
 google-genai>=1.0.0,<3.0.0
-# Agno PostgresDb requiere SQLAlchemy + psycopg (no los instala por sí mismo)
-sqlalchemy>=2.0.0,<3.0.0
-psycopg[binary]>=3.1.0
