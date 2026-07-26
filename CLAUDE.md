@@ -78,6 +78,9 @@ la sube a Supabase Storage (`app/services/storage.py`, bucket `product-images`) 
 con **Gemini** (`app/services/vision.py`, SDK `google-genai`) para sugerir `name`, `description`
 y `tags`. **No crea el producto**: devuelve sugerencias para que el front las edite y guarde con
 `POST /erp/products`. `vision` nunca rompe: sin `GEMINI_API_KEY` o ante un fallo devuelve `ai_ok=false`.
+`analyze_product_image` es `async` y usa `client.aio.models.generate_content` (el cliente sync
+bloquearía el event loop unos segundos por foto); `optimize_image` es Pillow puro y el endpoint
+lo corre con `asyncio.to_thread`.
 Esto usa Gemini a propósito y vive fuera de `app/ai/` (que es el bot Claude/OpenAI).
 
 `search_catalog` ahora incluye `description` y `tags` en su shape lean para que el vendedor

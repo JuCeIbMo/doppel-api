@@ -37,10 +37,11 @@ def _patch_pipeline(monkeypatch, *, analysis):
         return "https://cdn.test/t1/abc.webp"
 
     monkeypatch.setattr("app.routers.erp.products.upload_product_image", _upload)
-    monkeypatch.setattr(
-        "app.routers.erp.products.analyze_product_image",
-        lambda data, content_type: analysis,
-    )
+
+    async def _analyze(data, content_type):
+        return analysis
+
+    monkeypatch.setattr("app.routers.erp.products.analyze_product_image", _analyze)
 
 
 def test_analyze_image_returns_suggestions(client, monkeypatch):

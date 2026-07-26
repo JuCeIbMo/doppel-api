@@ -6,6 +6,10 @@ pensados para que el agente vendedor matchee consultas de clientes.
 
 Nunca rompe: si no hay API key, o Gemini falla, o la respuesta no es JSON válido, devuelve
 `ai_ok=False` con sugerencias vacías para que el usuario complete a mano.
+
+Es `async` y usa el cliente asíncrono del SDK (`client.aio`) a propósito: una llamada de
+visión tarda segundos, y hecha con el cliente síncrono desde un `async def` congelaría el
+event loop — con él, el webhook de WhatsApp de todos los tenants — mientras dura.
 """
 
 from __future__ import annotations
@@ -43,7 +47,9 @@ def _get_client():
     return _client
 
 
-def analyze_product_image(image_bytes: bytes, content_type: str, hint: str | None = None) -> dict:
+async def analyze_product_image(
+    image_bytes: bytes, content_type: str, hint: str | None = None
+) -> dict:
     """Devuelve {ai_ok, name, description, tags} sugeridos por Gemini para la imagen."""
     if not settings.GEMINI_API_KEY:
         return dict(_BLANK)
@@ -52,7 +58,7 @@ def analyze_product_image(image_bytes: bytes, content_type: str, hint: str | Non
         from google.genai import types
 
         prompt = _PROMPT if not hint else f"{_PROMPT}\nContexto del vendedor: {hint}"
-        response = _get_client().models.generate_content(
+        response = await _get_client().aio.models.generate_content(
             model=settings.GEMINI_VISION_MODEL,
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type=content_type),

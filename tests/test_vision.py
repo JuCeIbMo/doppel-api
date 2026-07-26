@@ -3,6 +3,7 @@
 Sin red: se mockea el cliente genai. app.config se instancia al importar.
 """
 
+import asyncio
 import json
 import os
 
@@ -27,16 +28,29 @@ class _FakeModels:
         self._exc = exc
         self.called_with = None
 
-    def generate_content(self, **kwargs):
+    async def generate_content(self, **kwargs):
         self.called_with = kwargs
         if self._exc:
             raise self._exc
         return _FakeResponse(self._text)
 
 
-class _FakeClient:
+class _FakeAio:
     def __init__(self, models):
         self.models = models
+
+
+class _FakeClient:
+    """El código llama `client.aio.models.generate_content`, la variante async del
+    SDK. `client.models` queda sin definir a propósito: si alguien vuelve al
+    cliente síncrono (que bloquea el event loop), estos tests explotan."""
+
+    def __init__(self, models):
+        self.aio = _FakeAio(models)
+
+
+def _analyze(*args, **kwargs):
+    return asyncio.run(vision.analyze_product_image(*args, **kwargs))
 
 
 def test_analyze_happy_path(monkeypatch):
@@ -46,7 +60,7 @@ def test_analyze_happy_path(monkeypatch):
     monkeypatch.setattr(vision.settings, "GEMINI_API_KEY", "k")
     monkeypatch.setattr(vision, "_get_client", lambda: _FakeClient(models))
 
-    result = vision.analyze_product_image(b"img", "image/webp")
+    result = _analyze(b"img", "image/webp")
 
     assert result["ai_ok"] is True
     assert result["name"] == "Coca-Cola 500ml"
@@ -61,7 +75,7 @@ def test_analyze_without_key_skips_network(monkeypatch):
         raise AssertionError("no debe construir el cliente sin API key")
 
     monkeypatch.setattr(vision, "_get_client", _boom)
-    result = vision.analyze_product_image(b"img", "image/webp")
+    result = _analyze(b"img", "image/webp")
 
     assert result == {"ai_ok": False, "name": None, "description": None, "tags": []}
 
@@ -71,7 +85,7 @@ def test_analyze_handles_gemini_failure(monkeypatch):
     monkeypatch.setattr(vision.settings, "GEMINI_API_KEY", "k")
     monkeypatch.setattr(vision, "_get_client", lambda: _FakeClient(models))
 
-    result = vision.analyze_product_image(b"img", "image/webp")
+    result = _analyze(b"img", "image/webp")
     assert result["ai_ok"] is False
     assert result["tags"] == []
 
@@ -81,7 +95,7 @@ def test_analyze_handles_malformed_json(monkeypatch):
     monkeypatch.setattr(vision.settings, "GEMINI_API_KEY", "k")
     monkeypatch.setattr(vision, "_get_client", lambda: _FakeClient(models))
 
-    result = vision.analyze_product_image(b"img", "image/webp")
+    result = _analyze(b"img", "image/webp")
     assert result["ai_ok"] is False
 
 
@@ -92,7 +106,7 @@ def test_analyze_normalizes_tags(monkeypatch):
     monkeypatch.setattr(vision.settings, "GEMINI_API_KEY", "k")
     monkeypatch.setattr(vision, "_get_client", lambda: _FakeClient(models))
 
-    tags = vision.analyze_product_image(b"img", "image/webp")["tags"]
+    tags = _analyze(b"img", "image/webp")["tags"]
     assert tags[:3] == ["bebida", "gaseosa", "cola"]  # minúsculas, trim, dedupe
     assert len(tags) <= 10
     assert "" not in tags

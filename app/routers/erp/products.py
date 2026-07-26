@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
@@ -54,10 +55,15 @@ async def analyze_image(
     NO crea el producto: devuelve la URL pública + nombre/descripción/tags sugeridos para
     que el front los edite y luego guarde con POST /erp/products. Si Gemini falla o no está
     configurado, igual devuelve la `image_url` con `ai_ok=false`.
+
+    Los dos pasos pesados salen del event loop: `optimize_image` es Pillow puro (CPU, cientos
+    de ms en una foto de celular) y va a un thread; el análisis de Gemini son segundos de red
+    y usa el cliente async del SDK. Corridos inline bloquearían el proceso entero —
+    incluido el webhook de WhatsApp de todos los tenants — mientras dura la subida.
     """
-    optimized = optimize_image(await file.read())
+    optimized = await asyncio.to_thread(optimize_image, await file.read())
     image_url = await upload_product_image(ctx.tenant_id, optimized)
-    analysis = analyze_product_image(optimized, "image/webp")
+    analysis = await analyze_product_image(optimized, "image/webp")
     await log_activity(ctx, action="product.image_analyzed", module="inventory",
                  detail={"ai_ok": analysis["ai_ok"]})
     return ProductImageAnalysis(image_url=image_url, **analysis)
