@@ -10,14 +10,15 @@ Reemplaza a `app/ai/bridge.py` (Agno). Diferencias del contrato viejo:
 
 Cachea un agente compilado por `(tenant_id, role)` para no reconstruir el grafo
 en cada mensaje (la conexión sale del pool compartido de `persistence`). El
-caché se desaloja cuando un turno falla, así un error transitorio no queda
-pegado. Sin invalidación por cambios de config todavía (ver TODO abajo) —
-conocido, no oculto.
+caché se desaloja cuando un turno falla (así un error transitorio no queda
+pegado) y cuando cambia la config del tenant, comparando un fingerprint contra
+el que se usó para construirlo.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from app.ai_core.agents.admin_agent import build_admin_agent, run_admin_agent_turn
@@ -28,7 +29,7 @@ from app.ai_core.media.transcription import transcribe_audio_media
 
 logger = logging.getLogger("doppel.ai_core.bridge")
 
-_agents: dict[tuple[str, str], object] = {}
+_agents: dict[tuple[str, str], tuple[str, object]] = {}
 _agents_lock = asyncio.Lock()
 
 # Cap the cache so a long tail of tenants cannot grow it without bound. Agents
@@ -47,26 +48,44 @@ def _image_note(media: list[dict] | None) -> str:
     return "\n[el cliente envió una imagen; hoy no puedo verla, pedile que describa lo que busca]" if images else ""
 
 
-async def _get_or_build_agent(tenant: TenantConfig, role: str):
-    """Cache the compiled agent per (tenant_id, role). Built lazily on first use.
+def _config_fingerprint(tenant: TenantConfig) -> str:
+    """Fingerprint the tenant config that gets baked into a built agent.
 
-    TODO: no cache invalidation on tenant config changes yet (the ported
-    project's TenantRegistry tracked a config "generation" to rebuild only
-    when it changed — worth porting once bot_configs/business_info edits need
-    to reach a running process without a restart).
+    Deliberately the whole model instead of a hand-picked subset: `business_name`
+    and `tone` are substituted into the prompts at build time, and
+    `allowed_tools`/`allowed_subagents` decide what is bound at all. A curated
+    list goes stale the moment a field is added, and the failure is silent.
+    Rebuilding on an irrelevant change costs one cheap rebuild; missing a
+    relevant one serves the old config until the next deploy.
+    """
+    return json.dumps(tenant.model_dump(), sort_keys=True, default=str)
+
+
+async def _get_or_build_agent(tenant: TenantConfig, role: str):
+    """Cache the compiled agent per (tenant_id, role), keyed to its config.
+
+    `respond` reloads the tenant config on every message anyway, so comparing a
+    fingerprint costs nothing and lets `bot_configs`/`business_info` edits reach
+    a running process: without it the agent keeps the business name and the
+    tools it was built with until the next deploy.
     """
     key = (tenant.tenant_id, role)
+    fingerprint = _config_fingerprint(tenant)
     async with _agents_lock:
-        agent = _agents.get(key)
-        if agent is None:
-            agent = (
-                await build_admin_agent(tenant)
-                if role == "admin"
-                else await build_public_agent(tenant)
-            )
+        cached = _agents.get(key)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        agent = (
+            await build_admin_agent(tenant)
+            if role == "admin"
+            else await build_public_agent(tenant)
+        )
+        # Only a genuinely new tenant grows the cache; replacing a stale entry
+        # must not evict someone else.
+        if key not in _agents:
             while len(_agents) >= MAX_CACHED_AGENTS:
                 _agents.pop(next(iter(_agents)))
-            _agents[key] = agent
+        _agents[key] = (fingerprint, agent)
         return agent
 
 

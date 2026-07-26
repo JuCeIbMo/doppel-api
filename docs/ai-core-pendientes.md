@@ -8,31 +8,6 @@ Ordenado por riesgo real, no por esfuerzo.
 
 ---
 
-## 🟠 `update_config` no actualiza nada
-
-**Dónde:** `app/ai_core/tools/config.py`
-
-El nombre y el parámetro `requested_changes` le dicen al modelo que puede
-escribir; el cuerpo sólo lee. El dueño va a pedir un cambio y el admin agent va a
-contestar que lo hizo.
-
-**Fix:** renombrar a `get_config` / `suggest_config_changes`.
-
----
-
-## 🟠 Sin invalidación de caché de agente por cambios de config
-
-**Dónde:** `app/ai_core/bridge.py:_get_or_build_agent` (ya marcado con TODO)
-
-Editar `bot_configs` / `business_info` no llega a un proceso corriendo: el agente
-cacheado conserva el nombre del negocio y los `admin_phones` viejos hasta el
-próximo deploy.
-
-**Fix:** el proyecto portado trackeaba una "generación" de config para reconstruir
-sólo cuando cambiaba. Vale portar eso.
-
----
-
 ## 🟡 El router clasifica una sola vez por conversación
 
 **Dónde:** `app/ai_core/agents/public_agent.py:route_from_start`
@@ -92,6 +67,27 @@ varios workers).
 ---
 
 ## Ya arreglado (no re-diagnosticar)
+
+- ✅ **Los prompts describían tools que no existían.** Hallazgo nuevo, encontrado
+  al tocar `update_config`. `admin_agent.md` documentaba cinco tools
+  (`get_dashboard_summary`, `get_stock`, `get_top_products`, `create_sale`,
+  `adjust_stock`) — **ninguna existía**, y su flujo estrella ("registrar una
+  venta") era imposible porque el admin no tiene ninguna tool que registre
+  ventas. `catalog.md` y `closer.md` nombraban tools en español de una
+  iteración anterior (`consultar_stock`, `registrar_pedido`, `enviar_link_pago`,
+  `escalar_a_humano`), o sea que también pegaba en clientes reales. Además
+  `human_handoff` estaba en `ALL_PUBLIC_TOOLS` y documentada, pero no bindeada a
+  ningún agente: la escalación a humano era un camino muerto (ahora va al
+  closer). Atado por `tests/test_prompt_tool_sync.py` — los prompts no los cubre
+  ningún import ni type check, se desincronizan en silencio.
+- ✅ **`update_config` mentía.** Renombrada a `get_config`, sin el parámetro
+  `requested_changes` que le sugería al modelo que escribía, y el payload ahora
+  dice explícitamente que no se modificó nada.
+- ✅ **Caché de agente sin invalidar por config.** `_get_or_build_agent` compara
+  un fingerprint del `TenantConfig` completo (no un subconjunto elegido a mano,
+  que se queda viejo en silencio al agregar un campo) contra el que se usó para
+  construir el agente. `respond` ya recargaba la config en cada mensaje, así que
+  no agrega I/O.
 
 - ✅ **`deepseek-v4-flash` es un id válido.** Descartado por observación: el bot
   responde en producción. Se overridea igual con `LLM_MODEL`,

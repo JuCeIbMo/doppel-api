@@ -267,6 +267,54 @@ def test_successful_turn_keeps_the_agent_cached(monkeypatch):
     assert builds == 1
 
 
+def test_config_change_rebuilds_the_agent(monkeypatch):
+    """Otherwise a bot_configs edit never reaches a running process."""
+    builds: list[str] = []
+
+    async def fake_build_public_agent(tenant):
+        builds.append(tenant.business_name)
+        return object()
+
+    monkeypatch.setattr(bridge, "build_public_agent", fake_build_public_agent)
+    monkeypatch.setattr(bridge, "_agents", {})
+
+    renamed = _tenant()
+    renamed.business_name = "Kiosco Nuevo"
+
+    async def scenario():
+        await bridge._get_or_build_agent(_tenant(), "public")
+        await bridge._get_or_build_agent(_tenant(), "public")  # unchanged: cached
+        await bridge._get_or_build_agent(renamed, "public")    # changed: rebuilt
+
+    asyncio.run(scenario())
+
+    assert builds == ["Kiosco", "Kiosco Nuevo"]
+    assert len(bridge._agents) == 1, "the rebuild must replace, not duplicate"
+
+
+def test_tool_allowlist_change_rebuilds_the_agent(monkeypatch):
+    """The fingerprint must cover what is bound, not just the display name."""
+    builds = 0
+
+    async def fake_build_public_agent(_tenant):
+        nonlocal builds
+        builds += 1
+        return object()
+
+    monkeypatch.setattr(bridge, "build_public_agent", fake_build_public_agent)
+    monkeypatch.setattr(bridge, "_agents", {})
+
+    restricted = _tenant()
+    restricted.public_agent.allowed_tools = ["search_catalog"]
+
+    async def scenario():
+        await bridge._get_or_build_agent(_tenant(), "public")
+        await bridge._get_or_build_agent(restricted, "public")
+
+    asyncio.run(scenario())
+    assert builds == 2
+
+
 def test_agent_cache_is_bounded(monkeypatch):
     """An unbounded cache grows one agent per tenant for the life of the process."""
     async def fake_build_public_agent(_tenant):
