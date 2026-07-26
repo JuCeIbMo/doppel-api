@@ -224,9 +224,9 @@ def test_failed_turn_evicts_the_cached_agent(monkeypatch):
 
     replies = asyncio.run(scenario())
 
-    # `None` on both: the customer gets silence, which is exactly why a
+    # `ok=False` on both: the customer gets silence, which is exactly why a
     # permanently cached broken agent went unnoticed before.
-    assert replies == [None, None]
+    assert [reply.ok for reply in replies] == [False, False]
     # But the agent was rebuilt, so a transient failure stays transient.
     assert builds == 2, "the broken agent stayed cached after the failure"
     assert bridge._agents == {}
@@ -263,7 +263,7 @@ def test_successful_turn_keeps_the_agent_cached(monkeypatch):
             await bridge.respond(tenant_id="t1", user_phone="+999", content="hola"),
         ]
 
-    assert asyncio.run(scenario()) == ["listo", "listo"]
+    assert [reply.text for reply in asyncio.run(scenario())] == ["listo", "listo"]
     assert builds == 1
 
 

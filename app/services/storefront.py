@@ -39,6 +39,20 @@ async def search_catalog(ctx: ERPContext, query: str | None = None) -> list[dict
     ]
 
 
+async def get_product_image(ctx: ERPContext, product_id: str) -> str | None:
+    """URL pública de la foto de un producto, o None si no tiene.
+
+    Aparte de `search_catalog` a propósito: la URL nunca entra al shape lean que
+    ve el modelo, porque si la ve la pega en el texto de la respuesta. El agente
+    trabaja con el `id` y el canal resuelve la foto.
+    """
+    try:
+        product = await ProductsService().get(ctx, product_id)
+    except NotFound:
+        return None
+    return product.get("image_url") or None
+
+
 async def register_sale(
     ctx: ERPContext,
     items: list[dict],

@@ -44,3 +44,33 @@ class OrderResult(BaseModel):
 class HandoffResult(BaseModel):
     status: str
     reason: str
+
+
+class ChannelActionResult(BaseModel):
+    """Resultado de encolar una acción de canal (foto, botones, lista).
+
+    `ok: False` con un `reason` legible en vez de una excepción: que un producto
+    no tenga foto es una respuesta normal, y el modelo tiene que poder seguir la
+    conversación describiéndolo en palabras.
+    """
+
+    ok: bool
+    reason: str = ""
+
+
+class ChoiceOption(BaseModel):
+    label: str = Field(description="What the customer sees on the button; max 20 characters")
+    value: str = Field(description="Short id you will recognise when the customer taps it")
+
+
+class ListRowInput(BaseModel):
+    title: str = Field(description="Row title; max 24 characters")
+    value: str = Field(description="Short id you will recognise when the customer picks it")
+    description: str | None = Field(
+        default=None, description="Optional second line, e.g. the price; max 72 characters"
+    )
+
+
+class ListSectionInput(BaseModel):
+    title: str = Field(description="Section heading; max 24 characters")
+    rows: list[ListRowInput] = Field(description="Options in this section")

@@ -39,9 +39,15 @@ PROMPTS_DIR = Path("app/ai_core/prompts")
 # Business tools each public specialist binds, mirroring app/ai_core/subagents/.
 _PUBLIC_BUSINESS_TOOLS = {
     "greeter": set(),
-    "catalog": {"search_catalog", "check_stock"},
-    "objection": {"search_catalog", "check_stock"},
-    "closer": {"search_catalog", "check_stock", "create_order", "human_handoff"},
+    "catalog": {
+        "search_catalog", "check_stock",
+        "send_image", "send_reply_buttons", "send_list_message",
+    },
+    "objection": {"search_catalog", "check_stock", "send_image", "send_reply_buttons"},
+    "closer": {
+        "search_catalog", "check_stock", "create_order", "human_handoff",
+        "send_image", "send_reply_buttons",
+    },
 }
 
 # A prompt may legitimately mention these in backticks without calling them:
@@ -87,10 +93,14 @@ def test_public_business_tool_map_matches_the_subagent_modules():
     """This test's own map must not drift from the real builders."""
     for agent, expected in _PUBLIC_BUSINESS_TOOLS.items():
         source = Path(f"app/ai_core/subagents/{agent}.py").read_text(encoding="utf-8")
-        match = re.search(r"from app\.ai_core\.tools import ([^\n]+)", source)
-        imported = (
-            {name.strip() for name in match.group(1).split(",")} if match else set()
+        # Tolera las dos formas del import: una línea, o parentizado en varias.
+        # Con un patrón de una sola línea, agregar tools hasta partir el import
+        # dejaba `imported` vacío y el test fallaba con un mensaje engañoso.
+        match = re.search(
+            r"from app\.ai_core\.tools import (?:\(([^)]+)\)|([^\n(]+))", source
         )
+        raw = (match.group(1) or match.group(2)) if match else ""
+        imported = {name.strip() for name in raw.split(",") if name.strip()}
         assert imported == expected, (
             f"{agent}.py imports {sorted(imported)} but the test map expects "
             f"{sorted(expected)} — update the map."

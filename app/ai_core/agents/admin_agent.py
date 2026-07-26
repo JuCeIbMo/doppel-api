@@ -11,6 +11,7 @@ from app.ai_core.agents.guardrails import (
     sanitize_user_input,
 )
 from app.ai_core.agents.llm import build_chat_model, resolve_model_name
+from app.ai_core.channel.outbox import TurnRuntime
 from app.ai_core.config.tenant import TenantConfig
 from app.ai_core.observability.langfuse import (
     invocation_config,
@@ -63,6 +64,7 @@ async def build_admin_agent(tenant: TenantConfig):
         tools=tools,
         checkpointer=checkpointer,
         middleware=specialist_middleware(tenant, "admin"),
+        context_schema=TurnRuntime,
     )
 
     return agent
@@ -92,6 +94,7 @@ async def run_admin_agent_turn(
     # turn id is stable across a redelivery of the same inbound message.
     turn_id = message_id or str(uuid.uuid4())
     message_id = str(uuid.uuid4())
+    turn_runtime = TurnRuntime()
     start = time.time()
     run_name = "admin-support-turn"
     with trace_attributes(
@@ -103,6 +106,7 @@ async def run_admin_agent_turn(
         result = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message, id=message_id)]},
             config=invocation_config(thread_id, run_name, turn_id=turn_id),
+            context=turn_runtime,
         )
     latency_ms = int((time.time() - start) * 1000)
 
@@ -139,4 +143,8 @@ async def run_admin_agent_turn(
     except Exception as exc:  # noqa: BLE001 - tracing must never fail an admin turn
         logger.warning("Admin turn tracing failed: %s", exc)
 
-    return {**result, "messages": turn_messages}
+    return {
+        **result,
+        "messages": turn_messages,
+        "channel_actions": turn_runtime.outbox.drain(),
+    }

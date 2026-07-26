@@ -16,6 +16,7 @@ from app.ai_core.agents.handoffs import (
     handoff_targets,
 )
 from app.ai_core.agents.llm import resolve_model_name
+from app.ai_core.channel.outbox import TurnRuntime
 from app.ai_core.agents.router import build_router_graph
 from app.ai_core.config.tenant import TenantConfig
 from app.ai_core.observability.langfuse import (
@@ -149,7 +150,7 @@ async def build_public_agent(tenant: TenantConfig):
         active = state.get("active_agent")
         return active if active in specialists else "initial_router"
 
-    builder = StateGraph(PublicSwarmState)
+    builder = StateGraph(PublicSwarmState, context_schema=TurnRuntime)
     builder.add_node(
         "initial_router",
         initial_router,
@@ -196,6 +197,9 @@ async def run_public_agent_turn(
     # a redelivery of the same inbound message.
     turn_id = message_id or str(uuid.uuid4())
     message_id = str(uuid.uuid4())
+    # One per invocation: this is what keeps the channel actions of two
+    # concurrent conversations apart. See `channel/outbox.py`.
+    turn_runtime = TurnRuntime()
     start = time.time()
     run_name = "public-support-turn"
     with trace_attributes(
@@ -207,6 +211,7 @@ async def run_public_agent_turn(
         result = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message, id=message_id)]},
             config=invocation_config(thread_id, run_name, turn_id=turn_id),
+            context=turn_runtime,
         )
     latency_ms = int((time.time() - start) * 1000)
 
@@ -245,4 +250,8 @@ async def run_public_agent_turn(
     except Exception as exc:  # noqa: BLE001 - tracing must never fail a customer turn
         logger.warning("Turn tracing failed: %s", exc)
 
-    return {**result, "messages": turn_messages}
+    return {
+        **result,
+        "messages": turn_messages,
+        "channel_actions": turn_runtime.outbox.drain(),
+    }

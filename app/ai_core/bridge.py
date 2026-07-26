@@ -24,6 +24,8 @@ from contextlib import asynccontextmanager
 
 from app.ai_core.agents.admin_agent import build_admin_agent, run_admin_agent_turn
 from app.ai_core.agents.public_agent import build_public_agent, run_public_agent_turn
+from app.ai_core.channel.actions import TurnResult
+from app.ai_core.channel.inbound import InteractiveReply
 from app.ai_core.config.loader import load_tenant_config
 from app.ai_core.config.tenant import TenantConfig, resolve_role
 from app.ai_core.media.transcription import transcribe_audio_media
@@ -140,12 +142,17 @@ async def respond(
     content: str,
     media: list[dict] | None = None,
     message_id: str | None = None,
-) -> str | None:
-    """Ejecuta el agente correspondiente y devuelve el texto final ('' si falla).
+    interactive_reply: InteractiveReply | None = None,
+) -> TurnResult:
+    """Ejecuta el agente correspondiente y devuelve su texto y sus acciones de canal.
 
     `message_id` es el id del mensaje entrante de WhatsApp. Identifica el turno y
     de ahí sale la clave de idempotencia de `create_order`: si Meta reentrega el
     mismo mensaje, la venta no se registra dos veces.
+
+    Devuelve siempre un `TurnResult`, nunca `None`: `ok=False` es el agente que
+    crasheó, y `text=""` con `ok=True` es una respuesta vacía legítima. El webhook
+    no manda nada en ninguno de los dos casos, pero los loguea distinto.
     """
     media_types = [m.get("type") for m in (media or [])]
     logger.debug(
@@ -160,7 +167,13 @@ async def respond(
         thread_id = f"{tenant_id}:{role}:{user_phone}"
 
         transcript = await transcribe_audio_media(media)
-        text_parts = [content] if content else []
+        # Un tap no es texto del cliente: se reemplaza por la nota, en vez de
+        # mandarle al agente el título del botón como si lo hubiera escrito.
+        text_parts = (
+            [interactive_reply.as_agent_note()]
+            if interactive_reply is not None
+            else ([content] if content else [])
+        )
         if transcript:
             text_parts.append(f"[Nota de voz]: {transcript}")
             logger.debug("[TRANSCRIPCION] tenant=%s chars=%d", tenant_id, len(transcript))
@@ -180,13 +193,14 @@ async def respond(
         last = messages[-1] if messages else None
         reply = (getattr(last, "content", "") or "").strip()
 
+        actions = result.get("channel_actions") or []
         logger.debug(
-            "[OUTPUT_AGENTE] tenant=%s role=%s chars=%d respuesta=%r",
-            tenant_id, role, len(reply), reply[:120],
+            "[OUTPUT_AGENTE] tenant=%s role=%s chars=%d acciones=%d respuesta=%r",
+            tenant_id, role, len(reply), len(actions), reply[:120],
         )
-        return reply
+        return TurnResult(text=reply, actions=actions)
     except Exception:
         logger.exception("respuesta IA falló tenant=%s phone=%s", tenant_id, user_phone)
         if agent_key is not None:
             await _evict_agent(agent_key)
-        return None
+        return TurnResult(ok=False)

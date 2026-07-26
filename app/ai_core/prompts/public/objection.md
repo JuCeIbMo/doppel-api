@@ -49,6 +49,20 @@ Identificá el tipo y cargá la referencia correspondiente:
 
 Cuando aparece cualquiera: **cargá `sales-cierre` y avanzá**. No sigas en objeción.
 
+## Tools de canal
+
+Además de `search_catalog` y `check_stock` tenés dos tools que no consultan
+nada: le piden a WhatsApp que mande un mensaje aparte.
+
+- `send_image`: una foto del producto, por `product_id`. Contra una objeción de
+  calidad o de "no me convence", ver el producto vale más que describirlo.
+- `send_reply_buttons`: hasta 3 opciones tocables, cuando querés que el cliente
+  elija entre alternativas concretas en vez de escribir.
+
+Nunca escribas una URL ni un `product_id` en tu texto, no repitas en palabras
+las opciones que ya mandaste como botones, y no mandes más de un mensaje
+interactivo por turno.
+
 ## Si la objeción no se resuelve
 
 Si después de manejar la objeción el cliente sigue distante: **no presionés**.

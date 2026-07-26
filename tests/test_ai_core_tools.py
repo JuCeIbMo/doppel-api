@@ -32,6 +32,7 @@ import pytest
 from langchain.agents.middleware import AgentMiddleware
 
 import app.ai_core.tools.catalog as catalog_tools
+import app.ai_core.tools.channel as channel_tools
 import app.ai_core.tools.sales as sales_tools
 from app.ai_core.agents.context_middleware import (
     build_message_window,
@@ -41,6 +42,7 @@ from app.ai_core.agents.guardrails import (
     build_tool_error_boundary,
     build_tool_guardrail,
 )
+from app.ai_core.channel.outbox import TurnOutbox
 from app.ai_core.config.tenant import AdminAgentConfig, PublicAgentConfig, TenantConfig
 from app.ai_core.subagents._base import specialist_middleware
 from app.ai_core.tools import (
@@ -51,6 +53,9 @@ from app.ai_core.tools import (
     human_handoff,
     search_catalog,
     get_config,
+    send_image,
+    send_list_message,
+    send_reply_buttons,
     update_stock,
 )
 from app.ai_core.tools.context import ToolContext
@@ -58,6 +63,7 @@ from app.ai_core.tools.context import ToolContext
 ALL_TOOLS = [
     search_catalog, check_stock, create_order, get_sales_report,
     update_stock, add_product, human_handoff, get_config,
+    send_image, send_reply_buttons, send_list_message,
 ]
 
 TENANT = TenantConfig(
@@ -310,3 +316,94 @@ def test_middleware_injects_the_turn_id():
     ctx = request.tool_call["args"]["ctx"]
     assert ctx.turn_id == "wamid.ABC"
     assert ctx.thread_id == "t1:public:5917"
+
+
+# --- tools de canal ---------------------------------------------------------
+
+def _channel_ctx(role="public"):
+    return ToolContext(
+        tenant=TENANT, role=role, thread_id="t1:public:5917", outbox=TurnOutbox(),
+    )
+
+
+def test_send_image_queues_the_resolved_url(monkeypatch):
+    """El modelo pasa el product_id; la URL la resuelve el canal y nunca la ve."""
+    async def fake_get_product_image(ctx, product_id):
+        assert product_id == "p1"
+        return "https://cdn/p1.webp"
+
+    monkeypatch.setattr(
+        channel_tools.storefront, "get_product_image", fake_get_product_image)
+    ctx = _channel_ctx()
+
+    result = asyncio.run(send_image.ainvoke({"product_id": "p1", "ctx": ctx}))
+
+    assert result.ok
+    assert [a.image_url for a in ctx.outbox.actions] == ["https://cdn/p1.webp"]
+
+
+def test_send_image_without_a_photo_is_not_an_error(monkeypatch):
+    """Que un producto no tenga foto es normal: el agente lo describe en palabras."""
+    async def no_image(ctx, product_id):
+        return None
+
+    monkeypatch.setattr(channel_tools.storefront, "get_product_image", no_image)
+    ctx = _channel_ctx()
+
+    result = asyncio.run(send_image.ainvoke({"product_id": "p1", "ctx": ctx}))
+
+    assert (result.ok, result.reason) == (False, "no_image")
+    assert ctx.outbox.actions == []
+
+
+def test_send_reply_buttons_namespaces_the_ids():
+    """Sin el prefijo, el webhook no puede distinguir un botón nuestro de otro."""
+    ctx = _channel_ctx()
+
+    result = asyncio.run(send_reply_buttons.ainvoke({
+        "body": "¿Cómo pagás?",
+        "options": [{"label": "Efectivo", "value": "cash"}],
+        "ctx": ctx,
+    }))
+
+    assert result.ok
+    assert ctx.outbox.actions[0].buttons[0].id == "choice:cash"
+    assert ctx.outbox.actions[0].buttons[0].title == "Efectivo"
+
+
+def test_send_list_message_over_ten_rows_tells_the_model_why():
+    """Recortar en silencio descartaría una opción que el modelo quiso ofrecer."""
+    ctx = _channel_ctx()
+    rows = [{"title": f"f{i}", "value": f"v{i}"} for i in range(11)]
+
+    result = asyncio.run(send_list_message.ainvoke({
+        "body": "mirá",
+        "button_label": "Ver",
+        "sections": [{"title": "Todo", "rows": rows}],
+        "ctx": ctx,
+    }))
+
+    assert not result.ok
+    assert "10 rows in total" in result.reason
+    assert ctx.outbox.actions == []
+
+
+@pytest.mark.parametrize(
+    "tool, args",
+    [
+        (send_image, {"product_id": "p1"}),
+        (send_reply_buttons, {"body": "x", "options": [{"label": "A", "value": "a"}]}),
+        (send_list_message, {
+            "body": "x", "button_label": "Ver",
+            "sections": [{"title": "s", "rows": [{"title": "f", "value": "v"}]}],
+        }),
+    ],
+    ids=["send_image", "send_reply_buttons", "send_list_message"],
+)
+def test_channel_tools_degrade_without_an_outbox(tool, args):
+    """Invocado sin TurnRuntime (tests, CLI) no puede tirar abajo el turno."""
+    ctx = ToolContext(tenant=TENANT, role="public", thread_id="t1:public:5917")
+
+    result = asyncio.run(tool.ainvoke({**args, "ctx": ctx}))
+
+    assert (result.ok, result.reason) == (False, "channel_unavailable")

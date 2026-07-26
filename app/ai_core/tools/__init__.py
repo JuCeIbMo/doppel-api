@@ -1,4 +1,5 @@
 from app.ai_core.tools.catalog import add_product, search_catalog
+from app.ai_core.tools.channel import send_image, send_list_message, send_reply_buttons
 from app.ai_core.tools.config import get_config
 from app.ai_core.tools.handoff import human_handoff
 from app.ai_core.tools.reports import get_sales_report
@@ -14,4 +15,7 @@ __all__ = [
     "create_order",
     "check_stock",
     "update_stock",
+    "send_image",
+    "send_reply_buttons",
+    "send_list_message",
 ]

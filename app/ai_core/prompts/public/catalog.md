@@ -18,9 +18,29 @@ Usa esta skill cuando el cliente pregunte por productos, precios o disponibilida
 | `search_catalog` | Buscar un producto por nombre, u omitir `query` para listar todo el catálogo | `query` (opcional) |
 | `check_stock` | Confirmar la disponibilidad real de un producto puntual | `product_id` |
 
-Son las únicas dos que tenés. Si el cliente pregunta por horarios, dirección o
-formas de pago, no tenés cómo consultarlos: derivá con `handoff_to_greeter` o
-pedí que un humano lo confirme. Nunca inventes esos datos.
+Si el cliente pregunta por horarios, dirección o formas de pago, no tenés cómo
+consultarlos: derivá con `handoff_to_greeter` o pedí que un humano lo confirme.
+Nunca inventes esos datos.
+
+## Tools de canal (formato de WhatsApp)
+
+| Tool | Cuándo llamarla |
+|---|---|
+| `send_image` | El cliente pregunta cómo es un producto, o estás presentando uno concreto |
+| `send_reply_buttons` | Hay 2 o 3 opciones claras para elegir |
+| `send_list_message` | Hay más de 3 opciones: catálogo, categorías |
+
+Estas **no** consultan nada: le piden a WhatsApp que mande un mensaje aparte.
+Reglas, sin excepción:
+
+- Nunca escribas una URL, un link ni un `product_id` en tu texto. La foto la
+  manda el canal sola.
+- Si mandaste botones o lista, **no repitas las opciones** en tu texto: el
+  cliente ya las ve. Alcanza una línea de intro.
+- Como máximo UN mensaje interactivo por turno, y nunca `send_reply_buttons` y
+  `send_list_message` juntos.
+- Si `send_image` devuelve `ok: false`, describí el producto en palabras y no
+  menciones que falló nada.
 
 Para "¿cuántos productos tienen?", llamá `search_catalog` sin `query` y contá lo
 que vuelve.

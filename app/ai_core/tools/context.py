@@ -6,6 +6,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
+from app.ai_core.channel.outbox import TurnOutbox
 from app.ai_core.config.tenant import TenantConfig
 
 
@@ -18,6 +19,10 @@ class ToolContext:
     # id when available, otherwise a per-turn uuid). `create_order` keys its
     # idempotency off it — see `tools/sales.py`.
     turn_id: str = ""
+    # Channel actions queued during this turn, delivered by the webhook once the
+    # graph finishes. ``None`` when the graph was invoked without a `TurnRuntime`
+    # (tests, CLI): the channel tools degrade to a no-op instead of raising.
+    outbox: TurnOutbox | None = None
 
 
 _UNDEFINED = FieldInfo(annotation=str).default

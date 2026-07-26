@@ -11,7 +11,10 @@ os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 import hashlib
 import hmac
 import json
+import shutil
+import tempfile
 import unittest
+from contextlib import ExitStack
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from types import SimpleNamespace
@@ -19,9 +22,15 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.ai_core.channel.actions import SendImageAction, TurnResult
 from app.dependencies import get_current_tenant, get_current_user
 from app.main import app
 from app.security import verify_webhook_signature
+
+
+def _turn(text: str, actions=None) -> TurnResult:
+    """Lo que devuelve `bridge.respond`: texto más acciones de canal."""
+    return TurnResult(text=text, actions=actions or [])
 
 
 class FakeResult:
@@ -439,7 +448,7 @@ class MVPApiTests(unittest.TestCase):
             "messages": [],
         }
         fake_supabase = FakeSupabase(fake_store)
-        ai_core_response = AsyncMock(return_value="Listo")
+        ai_core_response = AsyncMock(return_value=_turn("Listo"))
 
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
@@ -519,7 +528,7 @@ class MVPApiTests(unittest.TestCase):
             ],
         }
         fake_supabase = FakeSupabase(fake_store)
-        ai_core_response = AsyncMock(return_value="Cuesta 10")
+        ai_core_response = AsyncMock(return_value=_turn("Cuesta 10"))
 
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
@@ -594,9 +603,27 @@ class MVPApiTests(unittest.TestCase):
             "messages": [],
         }
         fake_supabase = FakeSupabase(fake_store)
-        ai_core_response = AsyncMock(return_value="Veo la imagen")
+
+        # Archivo real en disco: así el test puede probar que el adjunto llega al
+        # agente Y que después se borra. Con un path inventado, el borrado sería
+        # un no-op indistinguible de no borrar nada.
+        tmp_dir = tempfile.mkdtemp()
+        media_path = os.path.join(tmp_dir, "media-1.jpg")
+        with open(media_path, "wb") as fh:
+            fh.write(b"jpeg-bytes")
+        self.addCleanup(shutil.rmtree, tmp_dir, True)
+
+        # `local_path` se lee acá y no después de la request: el turno se lleva
+        # el adjunto al terminar, así que para entonces la clave ya no está.
+        seen_paths = []
+
+        async def _respond(**kwargs):
+            seen_paths.extend(item.get("local_path") for item in kwargs["media"])
+            return _turn("Veo la imagen")
+
+        ai_core_response = AsyncMock(side_effect=_respond)
         download_media = AsyncMock(return_value={
-            "path": "C:/tmp/media-1.jpg",
+            "path": media_path,
             "mime_type": "image/jpeg",
             "size": 123,
         })
@@ -620,8 +647,120 @@ class MVPApiTests(unittest.TestCase):
         self.assertEqual(fake_store["messages"][0]["media"][0]["id"], "media-1")
         download_media.assert_awaited_once()
         self.assertEqual(ai_core_response.await_args.kwargs["content"], "Mira esto")
-        media_arg = ai_core_response.await_args.kwargs["media"]
-        self.assertEqual([item["local_path"] for item in media_arg], ["C:/tmp/media-1.jpg"])
+        self.assertEqual(seen_paths, [media_path])
+        # El adjunto se borra al terminar el turno: sin esto, cada nota de voz y
+        # cada foto que entra queda en /tmp para siempre.
+        self.assertFalse(os.path.exists(media_path))
+
+    def _connected_store(self, *, bot_enabled=True):
+        return {
+            "whatsapp_accounts": [
+                {
+                    "id": "wa-1",
+                    "tenant_id": "tenant-1",
+                    "phone_number_id": "phone-1",
+                    "status": "connected",
+                    "access_token_encrypted": "encrypted",
+                }
+            ],
+            "bot_configs": [
+                {
+                    "tenant_id": "tenant-1",
+                    "admin_phones": [],
+                    "bot_enabled": bot_enabled,
+                    "ai_model": "claude-test",
+                }
+            ],
+            "messages": [],
+        }
+
+    def _post_webhook(self, payload, fake_supabase, ai_core_response, **extra_patches):
+        patches = [
+            patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
+            patch("app.routers.webhook.verify_webhook_signature", return_value=True),
+            patch("app.routers.webhook.settings.BOT_ENABLED", "http://ai-core"),
+            patch("app.routers.webhook.ai_respond", ai_core_response),
+            patch("app.routers.webhook.decrypt_token", return_value="token"),
+            patch(
+                "app.routers.webhook.meta_api.send_whatsapp_message",
+                AsyncMock(return_value="out-1"),
+            ),
+        ]
+        patches += [patch(target, mock) for target, mock in extra_patches.items()]
+
+        with ExitStack() as stack:
+            for patcher in patches:
+                stack.enter_context(patcher)
+            return self.client.post(
+                "/webhook/whatsapp",
+                content=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+
+    def test_webhook_feeds_a_button_tap_back_to_the_agent(self):
+        """Un tap que se descarta es peor que no tener botones: el cliente toca y no pasa nada."""
+        payload = {
+            "entry": [{"changes": [{"value": {
+                "metadata": {"phone_number_id": "phone-1"},
+                "messages": [{
+                    "id": "wamid-tap",
+                    "from": "59170000002",
+                    "type": "interactive",
+                    "interactive": {
+                        "type": "button_reply",
+                        "button_reply": {"id": "choice:cash", "title": "Efectivo"},
+                    },
+                }],
+            }}]}]
+        }
+        fake_store = self._connected_store()
+        ai_core_response = AsyncMock(return_value=_turn("Perfecto, efectivo"))
+
+        response = self._post_webhook(payload, FakeSupabase(fake_store), ai_core_response)
+
+        self.assertEqual(response.status_code, 200)
+        # El dashboard guarda lo que el cliente vio, no el id interno.
+        self.assertEqual(fake_store["messages"][0]["content"], "Efectivo")
+        self.assertEqual(fake_store["messages"][0]["message_type"], "interactive")
+        # El agente recibe el tap como tal, con el prefijo `choice:` ya sacado.
+        reply = ai_core_response.await_args.kwargs["interactive_reply"]
+        self.assertEqual((reply.id, reply.value, reply.title), ("choice:cash", "cash", "Efectivo"))
+
+    def test_webhook_delivers_a_queued_channel_action(self):
+        payload = {
+            "entry": [{"changes": [{"value": {
+                "metadata": {"phone_number_id": "phone-1"},
+                "messages": [{
+                    "id": "wamid-img",
+                    "from": "59170000002",
+                    "type": "text",
+                    "text": {"body": "cómo es la remera?"},
+                }],
+            }}]}]
+        }
+        fake_store = self._connected_store()
+        ai_core_response = AsyncMock(return_value=_turn(
+            "Esta es la remera azul",
+            actions=[SendImageAction(image_url="https://cdn/p1.webp")],
+        ))
+        send_image_message = AsyncMock(return_value="out-img")
+
+        response = self._post_webhook(
+            payload,
+            FakeSupabase(fake_store),
+            ai_core_response,
+            **{"app.routers.webhook.meta_api.send_whatsapp_image_message": send_image_message},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        # Una sola foto absorbe el texto como caption: un mensaje, no dos.
+        send_image_message.assert_awaited_once()
+        self.assertEqual(send_image_message.await_args.args[3], "https://cdn/p1.webp")
+        self.assertEqual(send_image_message.await_args.args[4], "Esta es la remera azul")
+        outbound = [m for m in fake_store["messages"] if m["direction"] == "outbound"]
+        self.assertEqual(len(outbound), 1)
+        self.assertEqual(outbound[0]["message_type"], "image")
+        self.assertEqual(outbound[0]["wa_message_id"], "out-img")
 
     def test_webhook_logs_whatsapp_status_updates(self):
         payload = {

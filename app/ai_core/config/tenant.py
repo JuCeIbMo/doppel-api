@@ -17,7 +17,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ALL_PUBLIC_SUBAGENTS = ("greeter", "catalog", "objection", "closer")
-ALL_PUBLIC_TOOLS = ("search_catalog", "check_stock", "create_order", "human_handoff")
+ALL_PUBLIC_TOOLS = (
+    "search_catalog", "check_stock", "create_order", "human_handoff",
+    # Tools de canal: no consultan ni escriben nada, encolan un mensaje de
+    # WhatsApp (foto, botones, lista). Un tenant las puede apagar por acá si
+    # prefiere que su bot hable sólo en texto.
+    "send_image", "send_reply_buttons", "send_list_message",
+)
 ALL_ADMIN_TOOLS = (
     "get_sales_report", "add_product", "update_stock", "get_config",
     "search_catalog", "check_stock",

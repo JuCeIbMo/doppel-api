@@ -214,6 +214,10 @@ async def trigger_smb_sync(
     )
 
 
+def _messages_url(phone_number_id: str, api_version: str) -> str:
+    return f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages"
+
+
 async def send_whatsapp_message(
     client: httpx.AsyncClient,
     phone_number_id: str,
@@ -226,7 +230,7 @@ async def send_whatsapp_message(
     response = await _request_with_retry(
         client,
         "POST",
-        f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages",
+        _messages_url(phone_number_id, api_version),
         headers={"Authorization": f"Bearer {token}"},
         json={
             "messaging_product": "whatsapp",
@@ -256,7 +260,7 @@ async def send_whatsapp_image_message(
     response = await _request_with_retry(
         client,
         "POST",
-        f"https://graph.facebook.com/{api_version}/{phone_number_id}/messages",
+        _messages_url(phone_number_id, api_version),
         headers={"Authorization": f"Bearer {token}"},
         json={
             "messaging_product": "whatsapp",
@@ -267,6 +271,148 @@ async def send_whatsapp_image_message(
         },
     )
     return response.json()["messages"][0]["id"]
+
+
+async def send_whatsapp_buttons(
+    client: httpx.AsyncClient,
+    phone_number_id: str,
+    to: str,
+    body: str,
+    buttons: list[tuple[str, str]],
+    token: str,
+    api_version: str,
+) -> str:
+    """Send an interactive reply-button message. `buttons` is [(id, title), ...].
+
+    Meta caps this at 3 buttons with titles of 20 characters. The caller that
+    goes through the agent already validates that (app/ai_core/channel/actions.py);
+    the truncation here protects callers that do not.
+    """
+    response = await _request_with_retry(
+        client,
+        "POST",
+        _messages_url(phone_number_id, api_version),
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": body},
+                "action": {
+                    "buttons": [
+                        {"type": "reply", "reply": {"id": bid[:256], "title": title[:20]}}
+                        for bid, title in buttons[:3]
+                    ],
+                },
+            },
+        },
+    )
+    return response.json()["messages"][0]["id"]
+
+
+async def send_whatsapp_list(
+    client: httpx.AsyncClient,
+    phone_number_id: str,
+    to: str,
+    body: str,
+    button_label: str,
+    sections: list[dict],
+    token: str,
+    api_version: str,
+) -> str:
+    """Send an interactive list message.
+
+    `sections` is Meta's own shape: [{"title": str, "rows": [{"id", "title",
+    "description"}]}]. Meta caps it at 10 sections and 10 rows in total across
+    all of them; only the section cap is enforced here, because dropping rows
+    silently would hide options the caller meant to offer — the agent path
+    rejects an over-long list instead (app/ai_core/channel/actions.py).
+    """
+    response = await _request_with_retry(
+        client,
+        "POST",
+        _messages_url(phone_number_id, api_version),
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "interactive",
+            "interactive": {
+                "type": "list",
+                "body": {"text": body},
+                "action": {
+                    "button": button_label[:20],
+                    "sections": sections[:10],
+                },
+            },
+        },
+    )
+    return response.json()["messages"][0]["id"]
+
+
+async def send_whatsapp_reaction(
+    client: httpx.AsyncClient,
+    phone_number_id: str,
+    to: str,
+    message_id: str,
+    emoji: str,
+    token: str,
+    api_version: str,
+) -> str:
+    """React to one of the customer's messages. An empty `emoji` removes the reaction."""
+    response = await _request_with_retry(
+        client,
+        "POST",
+        _messages_url(phone_number_id, api_version),
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to,
+            "type": "reaction",
+            "reaction": {"message_id": message_id, "emoji": emoji},
+        },
+    )
+    return response.json()["messages"][0]["id"]
+
+
+async def mark_whatsapp_read(
+    client: httpx.AsyncClient,
+    phone_number_id: str,
+    message_id: str,
+    token: str,
+    api_version: str,
+    *,
+    typing: bool = False,
+) -> None:
+    """Mark an inbound message as read, optionally showing the typing indicator.
+
+    Meta folds both into one call. Returns nothing on purpose: the response is
+    `{"success": true}`, with no `messages` array to read a message id from.
+
+    `typing_indicator` requires API v21.0 or newer; on an older
+    `META_API_VERSION` Meta rejects the whole call, which is why callers treat
+    this as best-effort.
+    """
+    payload: dict = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id,
+    }
+    if typing:
+        payload["typing_indicator"] = {"type": "text"}
+
+    await _request_with_retry(
+        client,
+        "POST",
+        _messages_url(phone_number_id, api_version),
+        headers={"Authorization": f"Bearer {token}"},
+        json=payload,
+    )
 
 
 async def get_media_url(

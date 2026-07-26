@@ -69,6 +69,11 @@ class ToolContextMiddleware(AgentMiddleware):
         configurable = request.runtime.config.get("configurable", {})
         thread_id = configurable.get("thread_id", "")
         turn_id = configurable.get("turn_id", "")
+        # The outbox comes from the run-scoped `context=` instead of `configurable`
+        # because it is mutable and per-turn: this middleware lives inside an agent
+        # that `bridge` caches across turns and conversations, so anything stored on
+        # `self` would leak between customers. See `channel/outbox.py`.
+        turn_runtime = getattr(request.runtime, "context", None)
         # Inject ctx into a copy of the args so the original tool_call stored in
         # the assistant message is not polluted with a non-JSON-serializable object.
         request.tool_call["args"] = {
@@ -78,6 +83,7 @@ class ToolContextMiddleware(AgentMiddleware):
                 role=self.role,
                 thread_id=thread_id,
                 turn_id=turn_id,
+                outbox=getattr(turn_runtime, "outbox", None),
             ),
         }
         return True, original_args

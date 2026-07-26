@@ -8,12 +8,22 @@ from app.ai_core.subagents._base import (
     load_prompt,
     specialist_middleware,
 )
-from app.ai_core.tools import check_stock, search_catalog
+from app.ai_core.tools import (
+    check_stock,
+    search_catalog,
+    send_image,
+    send_list_message,
+    send_reply_buttons,
+)
 
 
 def build_catalog(tenant: TenantConfig, handoff_tools: list[BaseTool] | None = None):
     handoffs = handoff_tools or []
-    business_tools = allowed_tools_for(tenant, "public", [search_catalog, check_stock])
+    business_tools = allowed_tools_for(
+        tenant,
+        "public",
+        [search_catalog, check_stock, send_image, send_reply_buttons, send_list_message],
+    )
     return create_agent(
         name="catalog",
         model=build_chat_model("public", temperature=0.7),

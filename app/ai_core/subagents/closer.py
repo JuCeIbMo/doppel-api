@@ -8,7 +8,14 @@ from app.ai_core.subagents._base import (
     load_prompt,
     specialist_middleware,
 )
-from app.ai_core.tools import check_stock, create_order, human_handoff, search_catalog
+from app.ai_core.tools import (
+    check_stock,
+    create_order,
+    human_handoff,
+    search_catalog,
+    send_image,
+    send_reply_buttons,
+)
 
 
 def build_closer(tenant: TenantConfig, handoff_tools: list[BaseTool] | None = None):
@@ -20,7 +27,10 @@ def build_closer(tenant: TenantConfig, handoff_tools: list[BaseTool] | None = No
     business_tools = allowed_tools_for(
         tenant,
         "public",
-        [search_catalog, check_stock, create_order, human_handoff],
+        [
+            search_catalog, check_stock, create_order, human_handoff,
+            send_image, send_reply_buttons,
+        ],
     )
     return create_agent(
         name="closer",

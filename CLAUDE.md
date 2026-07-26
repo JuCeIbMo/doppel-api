@@ -84,14 +84,53 @@ lo corre con `asyncio.to_thread`.
 Esto usa Gemini a propósito y vive fuera de `app/ai/` (que es el bot Claude/OpenAI).
 
 `search_catalog` ahora incluye `description` y `tags` en su shape lean para que el vendedor
-matchee mejor las consultas de los clientes.
+matchee mejor las consultas de los clientes. **No incluye `image_url` a propósito**: si el
+modelo ve la URL la pega en el texto de la respuesta. La foto se manda con la tool
+`send_image`, que resuelve la URL por `product_id` vía `storefront.get_product_image`.
+
+### Capacidades de canal (foto, botones, listas)
+
+El agente no manda mensajes: **encola acciones**. Una tool de canal
+(`app/ai_core/tools/channel.py`) agrega una acción al outbox del turno, y el webhook las
+entrega en orden cuando el grafo termina.
+
+```
+tool (send_image / send_reply_buttons / send_list_message)
+  → ctx.outbox.add(SendImageAction(...))        app/ai_core/channel/actions.py
+    → run_*_agent_turn devuelve `channel_actions`
+      → bridge.respond -> TurnResult(text, actions)
+        → whatsapp_delivery.plan_delivery()      ordena y pliega texto+foto
+          → WhatsAppSender                        app/services/whatsapp_sender.py
+            → meta_api                            payloads de la Cloud API
+```
+
+**El outbox viaja por el `context=` run-scoped de LangGraph, no por `configurable`.**
+`ToolContextMiddleware` construye un `ToolContext` nuevo por tool call y vive dentro de un
+agente que `bridge` cachea entre turnos y entre conversaciones: cualquier buffer colgado del
+middleware se filtraría de un cliente a otro. `run_*_agent_turn` crea un `TurnRuntime` por
+turno y lo pasa en el `ainvoke`; LangGraph lo propaga a los subgrafos de los especialistas y
+nunca lo serializa al checkpoint. **`TurnRuntime` no puede definir `__bool__`/`__len__`**:
+`Runtime.merge` hace `other.context or self.context` y un contexto falsy se pierde en
+silencio al cruzar al subgrafo. `tests/test_turn_outbox.py` es el canario que lo sostiene.
+
+Las **cortesías** (tildes azules, "escribiendo…", reacción con emoji) son por reglas, sin
+LLM ni tokens: `app/ai_core/channel/courtesy.py`. El webhook las dispara **antes** de invocar
+al modelo, para que el indicador esté visible mientras el LLM piensa. Son best-effort: un 400
+de Meta se loguea y sigue. Los envíos reales sí propagan.
+
+Los **taps** de botón/lista entran como `type: "interactive"`, los parsea `_parse_inbound` y
+`bridge` los traduce a `[El cliente tocó la opción "..." (id: ...)]` para el agente. Los ids
+que generamos nosotros llevan el prefijo `choice:` (`CHOICE_PREFIX`) para distinguirlos de
+los de una plantilla de Meta.
 
 ### Convenciones importantes
 
 - **`ok` en respuestas de tools**: `storefront.register_sale` devuelve siempre `{"ok": bool, ...}`. Éxito = `ok: True`, error = `ok: False, "error": code, "message": ...`.
 - **`create_order` es idempotente por turno**: la clave sale de `thread_id + turn_id + ítems` (`app/ai_core/tools/sales.py`) y la hace cumplir el RPC `create_sale` (índice único parcial en `sales(tenant_id, idempotency_key)` + advisory lock, `migration_v10_sale_idempotency.sql`). Un reintento del modelo devuelve la misma venta con `duplicate: True`; el `turn_id` es el id del mensaje de WhatsApp, así que se propaga `webhook → bridge.respond → run_*_agent_turn → configurable["turn_id"] → ToolContext`.
-- **`bridge.respond` devuelve `str | None`**: `None` = el agente crasheó (se loguea como ERROR), `""` = respondió vacío legítimamente. El webhook no envía nada en ambos casos pero los diferencia en logs.
+- **`bridge.respond` devuelve `TurnResult`** (`app/ai_core/channel/actions.py`), nunca `None`: `ok=False` = el agente crasheó (se loguea como ERROR), `text=""` con `ok=True` = respondió vacío legítimamente. El webhook no envía nada en ambos casos pero los diferencia en logs.
 - **Todo el I/O de Supabase se awaitea**: `await get_supabase().table(...)...execute()`, igual para `.auth.*` y `.storage.*`. Un `async def` NUNCA debe hacer I/O bloqueante — bloquea el event loop y con él todo el server. Si te olvidás un `await`, falla ruidoso (`.data` sobre un coroutine → `AttributeError`), no en silencio.
+- **La regla anterior vale para todo I/O, no sólo Supabase**, pero `tests/test_async_discipline.py` sólo audita el AST de las llamadas a Supabase. Los SDKs de terceros (Gemini, OpenAI, httpx) hay que revisarlos a mano: usá la variante async del cliente, o `asyncio.to_thread` si no hay.
+- **Los adjuntos de WhatsApp se borran al terminar el turno**: `_download_media_files` los baja a `/tmp/doppel-whatsapp-media/{tenant}/` y el `finally` de `_process_bot_response` llama a `_cleanup_media_files`, que los saca del disco por cualquier salida (incluidas las tempranas: bot apagado, cuenta no encontrada, agente caído). Nadie más los recolecta.
 - **`log_activity` es best-effort**: nunca lanza excepciones — un fallo de audit log no debe romper la operación. Es `async`, hay que awaitearlo.
 
 ### Variables de entorno relevantes
