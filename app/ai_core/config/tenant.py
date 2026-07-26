@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 ALL_PUBLIC_SUBAGENTS = ("greeter", "catalog", "objection", "closer")
 ALL_PUBLIC_TOOLS = ("search_catalog", "check_stock", "create_order", "human_handoff")
 ALL_ADMIN_TOOLS = (
-    "get_sales_report", "add_product", "update_stock", "update_config",
+    "get_sales_report", "add_product", "update_stock", "get_config",
     "search_catalog", "check_stock",
 )
 

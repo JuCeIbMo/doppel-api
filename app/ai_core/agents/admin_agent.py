@@ -26,9 +26,9 @@ from app.ai_core.subagents._base import (
 from app.ai_core.tools import (
     add_product,
     check_stock,
+    get_config,
     get_sales_report,
     search_catalog,
-    update_config,
     update_stock,
 )
 
@@ -38,7 +38,7 @@ _ADMIN_DEFAULT_TOOLS = [
     get_sales_report,
     add_product,
     update_stock,
-    update_config,
+    get_config,
     search_catalog,
     check_stock,
 ]

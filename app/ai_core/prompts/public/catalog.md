@@ -13,11 +13,17 @@ Usa esta skill cuando el cliente pregunte por productos, precios o disponibilida
 
 ## Tools disponibles
 
-| Tool | Cuándo llamarla |
-|---|---|
-| `list_available_products` | Para mostrar el catálogo completo o buscar un producto |
-| `count_available_products` | Solo cuando el cliente pregunta cuántos productos hay |
-| `lookup_business_info` | Para obtener info del negocio si el cliente pregunta horarios, dirección, pagos |
+| Tool | Cuándo llamarla | Argumentos |
+|---|---|---|
+| `search_catalog` | Buscar un producto por nombre, u omitir `query` para listar todo el catálogo | `query` (opcional) |
+| `check_stock` | Confirmar la disponibilidad real de un producto puntual | `product_id` |
+
+Son las únicas dos que tenés. Si el cliente pregunta por horarios, dirección o
+formas de pago, no tenés cómo consultarlos: derivá con `handoff_to_greeter` o
+pedí que un humano lo confirme. Nunca inventes esos datos.
+
+Para "¿cuántos productos tienen?", llamá `search_catalog` sin `query` y contá lo
+que vuelve.
 
 ## Cómo presentar el catálogo
 
@@ -34,7 +40,7 @@ Si hay más de 5 productos, agrúpalos por categoría si existe. Si hay más de 
 ## Consultas de precio
 
 Si el cliente pregunta por un producto específico:
-1. Llama `list_available_products`
+1. Llama `search_catalog` con el nombre que dijo el cliente
 2. Filtra mentalmente por nombre
 3. Responde con nombre, precio y descripción breve
 
@@ -56,7 +62,7 @@ cliente te dijo en el diagnóstico**.
 
 ## Antes de presentar
 
-1. Llamá a `buscar_producto()` o `consultar_stock()` para tener datos reales.
+1. Llamá a `search_catalog` o `check_stock` para tener datos reales.
    Nunca presentés desde memoria.
 2. Repasá mentalmente qué te dijo el cliente en el diagnóstico.
 3. Elegí UN producto principal. Máximo dos si el caso lo amerita.

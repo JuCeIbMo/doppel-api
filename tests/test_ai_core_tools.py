@@ -48,14 +48,14 @@ from app.ai_core.tools import (
     get_sales_report,
     human_handoff,
     search_catalog,
-    update_config,
+    get_config,
     update_stock,
 )
 from app.ai_core.tools.context import ToolContext
 
 ALL_TOOLS = [
     search_catalog, check_stock, create_order, get_sales_report,
-    update_stock, add_product, human_handoff, update_config,
+    update_stock, add_product, human_handoff, get_config,
 ]
 
 TENANT = TenantConfig(
