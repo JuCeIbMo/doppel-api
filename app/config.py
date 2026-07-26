@@ -35,12 +35,19 @@ class Settings(BaseSettings):
     META_API_RETRY_DELAY_MS: int = 300
     ANTHROPIC_API_RETRIES: int = 2
 
-    # Agno (Postgres separado para historial/memoria de los agentes)
+    # Checkpointer de LangGraph (Postgres separado para historial de conversación)
+    CHAT_DB_URL: str = ""
+    # TODO(migración a app/ai_core): AGNO_DB_URL es de app/ai (Agno, se borra al
+    # final de la migración). El reemplazo es CHAT_DB_URL, arriba.
     AGNO_DB_URL: str = ""
     # OpenAI Whisper para transcribir notas de voz de WhatsApp
     OPENAI_API_KEY: str = ""
+    # DeepSeek: proveedor del LLM del agente (app/ai_core)
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_API_BASE: str = ""
+    # TODO(migración a app/ai_core): AI_DEFAULT_MODEL y AI_DEBUG son de app/ai (Agno,
+    # se borra al final de la migración). No agregar más usos nuevos sobre estos dos.
     AI_DEFAULT_MODEL: str = "claude-sonnet-4-20250514"
-    # Agno debug: activa logs detallados de mensajes, tools y tokens
     AI_DEBUG: bool = False
 
     # Gemini: herramienta del front para autodescribir/etiquetar imágenes de productos.

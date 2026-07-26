@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse, Response
 
 from app.config import settings
 from app.security import decrypt_token, verify_webhook_signature
-from app.ai import respond as ai_respond
+from app.ai_core.bridge import respond as ai_respond
 from app.services import meta_api
 from app.services.phone import normalize_phone
 from app.services.supabase_client import get_supabase
@@ -258,10 +258,12 @@ async def _process_bot_response(
     try:
         supabase = get_supabase()
 
-        # Get bot config (incl. manager fields added in migration_v4)
+        # Bot config: solo lo que webhook.py necesita para sus propios gates/logging.
+        # system_prompt/manager_prompt/ai_model ya no aplican — app.ai_core usa
+        # prompts estáticos (app/ai_core/prompts/) y DeepSeek fijo, no bot_configs.
         config_result = (
             supabase.table("bot_configs")
-            .select("bot_enabled, admin_phones, system_prompt, manager_prompt, ai_model")
+            .select("bot_enabled, admin_phones")
             .eq("tenant_id", tenant_id)
             .single()
             .execute()
@@ -274,8 +276,8 @@ async def _process_bot_response(
         is_manager = mode == "manager"
 
         logger.debug(
-            "[BOT_CONFIG] tenant=%s bot_enabled=%s ai_model=%s is_manager=%s",
-            tenant_id, config.get("bot_enabled"), config.get("ai_model"), is_manager,
+            "[BOT_CONFIG] tenant=%s bot_enabled=%s is_manager=%s",
+            tenant_id, config.get("bot_enabled"), is_manager,
         )
 
         # Manager bypasses bot_enabled — operator can talk even when client bot is paused.
@@ -306,20 +308,13 @@ async def _process_bot_response(
             media=media,
         )
 
-        # Conversation history is owned by the ai-core (Agno) per-user session in
-        # its own Postgres; the API no longer loads/sends it. Supabase `messages`
-        # remains the inbound/outbound log for the dashboard.
-        system_prompt = _select_system_prompt(config=config, mode=mode)
-
+        # Conversation history is owned by app.ai_core (LangGraph checkpointer) per
+        # thread in its own Postgres; the API no longer loads/sends it. Supabase
+        # `messages` remains the inbound/outbound log for the dashboard.
         ai_response = await ai_respond(
-            mode=mode,
             tenant_id=tenant_id,
             user_phone=user_phone,
             content=inbound_text,
-            system_prompt=system_prompt,
-            model=str(config.get("ai_model") or "claude-sonnet-4-20250514"),
-            wa_access_token=access_token,
-            wa_phone_number_id=wa_account["phone_number_id"],
             media=media,
         )
         if ai_response is None:
@@ -369,9 +364,3 @@ async def _process_bot_response(
 
     except Exception:
         logger.exception("Bot response failed for tenant=%s phone=%s", tenant_id, user_phone)
-
-
-def _select_system_prompt(*, config: dict, mode: str) -> str:
-    if mode == "manager" and config.get("manager_prompt"):
-        return str(config["manager_prompt"])
-    return str(config.get("system_prompt") or "")

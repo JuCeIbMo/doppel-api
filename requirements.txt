@@ -12,11 +12,15 @@ openpyxl>=3.1.0,<4.0.0
 reportlab>=4.0.0,<5.0.0
 python-barcode>=0.15.0,<1.0.0
 Pillow>=12.2.0
-# AI core (Agno como librería in-process + Whisper para transcripción de audio)
-agno>=2.0.0,<3.0.0
+# AI core (LangChain + LangGraph in-process, DeepSeek como proveedor del LLM)
+langchain>=1.3,<2
+langgraph>=1.2,<2
+langchain-deepseek>=1.1,<2
+langgraph-checkpoint-postgres>=2.0
+langfuse>=4.14.1,<5
 openai>=1.50.0,<2.0.0
 # Gemini (herramienta del front para autodescribir/etiquetar imágenes de productos)
 google-genai>=1.0.0,<3.0.0
-# Agno PostgresDb requiere SQLAlchemy + psycopg (no los instala por sí mismo)
+# SQLAlchemy + psycopg: requeridos por el checkpointer Postgres de LangGraph
 sqlalchemy>=2.0.0,<3.0.0
 psycopg[binary]>=3.1.0

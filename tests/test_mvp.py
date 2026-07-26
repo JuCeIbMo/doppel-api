@@ -454,8 +454,8 @@ class MVPApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         ai_core_response.assert_awaited_once()
-        self.assertEqual(ai_core_response.await_args.kwargs["mode"], "manager")
-        self.assertEqual(ai_core_response.await_args.kwargs["model"], "claude-test")
+        self.assertEqual(ai_core_response.await_args.kwargs["tenant_id"], "tenant-1")
+        self.assertEqual(ai_core_response.await_args.kwargs["user_phone"], "59170000001")
         self.assertEqual(fake_store["messages"][0]["agent_mode"], "manager")
         self.assertEqual(fake_store["messages"][1]["content"], "Listo")
 
@@ -534,10 +534,10 @@ class MVPApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         ai_core_response.assert_awaited_once()
-        self.assertEqual(ai_core_response.await_args.kwargs["mode"], "client")
-        self.assertEqual(ai_core_response.await_args.kwargs["system_prompt"], "Eres el bot cliente")
-        # El historial ahora lo administra Agno (en su Postgres) vía session_id;
-        # el API ya no envía la conversación. Supabase solo registra mensajes.
+        self.assertEqual(ai_core_response.await_args.kwargs["tenant_id"], "tenant-1")
+        self.assertEqual(ai_core_response.await_args.kwargs["user_phone"], "59170000002")
+        # El historial ahora lo administra app.ai_core (checkpointer LangGraph en su
+        # propio Postgres) vía thread_id; el API ya no envía la conversación.
         self.assertNotIn("conversation", ai_core_response.await_args.kwargs)
         directions = [m["direction"] for m in fake_store["messages"]]
         self.assertIn("inbound", directions)

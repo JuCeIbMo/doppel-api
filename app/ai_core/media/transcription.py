@@ -1,0 +1,56 @@
+"""Whisper audio transcription for voice notes. Framework-agnostic (plain OpenAI
+SDK), ported unchanged except for where it reads the API key from.
+
+No image support here: none of the ai_core subagents have a vision tool today,
+unlike the old Agno bridge (`app/ai/media/transcription.py`) which handed
+images straight to the model. Images sent via WhatsApp are silently ignored
+until a subagent gains a vision-capable tool — a real gap, not a silent one.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from openai import AsyncOpenAI
+
+from app.config import settings
+
+logger = logging.getLogger("doppel.ai_core.media")
+
+_AUDIO_TYPES = {"audio", "voice"}
+
+_client: AsyncOpenAI | None = None
+
+
+def _get_client() -> AsyncOpenAI:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    return _client
+
+
+async def transcribe_audio(path: str) -> str:
+    """Transcribe un archivo de audio a texto con Whisper. Devuelve '' si falla."""
+    logger.debug("[WHISPER] transcribiendo path=%s", path)
+    try:
+        with open(path, "rb") as fh:
+            result = await _get_client().audio.transcriptions.create(
+                model="whisper-1", file=fh
+            )
+        text = (result.text or "").strip()
+        logger.debug("[WHISPER] ok chars=%d resultado=%r", len(text), text[:80])
+        return text
+    except Exception:
+        logger.exception("transcripción de audio falló path=%s", path)
+        return ""
+
+
+async def transcribe_audio_media(media: list[dict] | None) -> str:
+    """Concatena las transcripciones de todas las notas de voz del mensaje."""
+    parts: list[str] = []
+    for item in media or []:
+        if item.get("type") in _AUDIO_TYPES and item.get("local_path"):
+            text = await transcribe_audio(item["local_path"])
+            if text:
+                parts.append(text)
+    return "\n".join(parts)
