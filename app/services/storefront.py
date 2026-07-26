@@ -44,10 +44,14 @@ async def register_sale(
     items: list[dict],
     customer_phone: str | None = None,
     payment_method: str = "whatsapp",
+    idempotency_key: str | None = None,
 ) -> dict:
     """Registra una venta del vendedor público. `items` = [{product_id, quantity}]
     usando el id que la IA ya obtuvo de search_catalog (no re-resuelve por nombre).
-    Delega en SalesService.create_sale (atómico). Devuelve confirmación lean."""
+    Delega en SalesService.create_sale (atómico). Devuelve confirmación lean.
+
+    Con `idempotency_key`, un reintento con la misma clave devuelve la venta ya
+    registrada (`duplicate: True`) en vez de crear una segunda."""
     if not items:
         return {"ok": False, "error": "validation_error",
                 "message": "Se requiere al menos un ítem", "detail": {}}
@@ -65,6 +69,7 @@ async def register_sale(
         "cash_account_id": None,
         "discount": 0,
         "notes": None,
+        "idempotency_key": idempotency_key,
         "items": items,
     }
     try:
@@ -74,10 +79,18 @@ async def register_sale(
 
     return {
         "ok": True,
+        # True = el RPC devolvió una venta que ya existía con esta clave, no creó otra.
+        "duplicate": bool(sale.get("idempotent_replay")),
         "total": sale.get("total"),
         "items": [
-            {"name": it.get("product_name"), "qty": it.get("quantity"),
-             "subtotal": it.get("subtotal")}
+            # `product_id` va en el shape para que el consumidor no tenga que
+            # aparear por índice contra lo que pidió (el orden de sale_items no
+            # está garantizado, y en un replay viene de la venta guardada).
+            # El importe de línea es `total` en sale_items; `subtotal` es el
+            # fallback para los shapes viejos.
+            {"product_id": it.get("product_id"),
+             "name": it.get("product_name"), "qty": it.get("quantity"),
+             "subtotal": it.get("total", it.get("subtotal"))}
             for it in sale.get("items", [])
         ],
     }

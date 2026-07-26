@@ -35,6 +35,10 @@ class OrderItemResult(BaseModel):
 class OrderResult(BaseModel):
     total: float
     items: list[OrderItemResult]
+    # True = esta orden ya estaba registrada (mismo turno, mismos ítems) y se
+    # devolvió la venta existente. El modelo no debe anunciarla como una compra
+    # nueva ni volver a pedir confirmación.
+    duplicate: bool = False
 
 
 class HandoffResult(BaseModel):

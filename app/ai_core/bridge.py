@@ -139,8 +139,14 @@ async def respond(
     user_phone: str,
     content: str,
     media: list[dict] | None = None,
+    message_id: str | None = None,
 ) -> str | None:
-    """Ejecuta el agente correspondiente y devuelve el texto final ('' si falla)."""
+    """Ejecuta el agente correspondiente y devuelve el texto final ('' si falla).
+
+    `message_id` es el id del mensaje entrante de WhatsApp. Identifica el turno y
+    de ahí sale la clave de idempotencia de `create_order`: si Meta reentrega el
+    mismo mensaje, la venta no se registra dos veces.
+    """
     media_types = [m.get("type") for m in (media or [])]
     logger.debug(
         "[START] tenant=%s phone=%s media=%s texto_chars=%d",
@@ -168,7 +174,7 @@ async def respond(
         agent = await _get_or_build_agent(tenant, role)
         run_turn = run_admin_agent_turn if role == "admin" else run_public_agent_turn
         async with _thread_lock(thread_id):
-            result = await run_turn(agent, tenant, thread_id, text)
+            result = await run_turn(agent, tenant, thread_id, text, message_id)
 
         messages = result.get("messages", [])
         last = messages[-1] if messages else None

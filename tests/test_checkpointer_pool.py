@@ -207,7 +207,7 @@ def test_failed_turn_evicts_the_cached_agent(monkeypatch):
         builds += 1
         return BrokenAgent()
 
-    async def fake_run_turn(agent, tenant, thread_id, text):
+    async def fake_run_turn(agent, tenant, thread_id, text, message_id=None):
         raise RuntimeError("the connection is closed")
 
     monkeypatch.setattr(bridge, "load_tenant_config", fake_load_tenant_config)
@@ -248,7 +248,7 @@ def test_successful_turn_keeps_the_agent_cached(monkeypatch):
     class Reply:
         content = "listo"
 
-    async def fake_run_turn(agent, tenant, thread_id, text):
+    async def fake_run_turn(agent, tenant, thread_id, text, message_id=None):
         return {"messages": [Reply()]}
 
     monkeypatch.setattr(bridge, "load_tenant_config", fake_load_tenant_config)

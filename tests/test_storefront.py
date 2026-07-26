@@ -95,8 +95,10 @@ def test_register_sale_happy_path(monkeypatch):
 
     async def fake_create_sale(self, ctx, body):
         captured["body"] = body
+        # Shape real de sale_items: el importe de línea es `total`, no `subtotal`.
         return {"id": "s1", "total": 2.4,
-                "items": [{"product_name": "Coca 500ml", "quantity": 2, "subtotal": 2.4}]}
+                "items": [{"product_id": "p1", "product_name": "Coca 500ml",
+                           "quantity": 2, "total": 2.4}]}
 
     monkeypatch.setattr("app.services.storefront.ClientsService.get_by_phone", fake_get_by_phone)
     monkeypatch.setattr("app.services.storefront.SalesService.create_sale", fake_create_sale)
@@ -104,8 +106,9 @@ def test_register_sale_happy_path(monkeypatch):
     result = asyncio.run(storefront.register_sale(
         CTX, items=[{"product_id": "p1", "quantity": 2}], customer_phone="+5491100"))
 
-    assert result == {"ok": True, "total": 2.4,
-                      "items": [{"name": "Coca 500ml", "qty": 2, "subtotal": 2.4}]}
+    assert result == {"ok": True, "duplicate": False, "total": 2.4,
+                      "items": [{"product_id": "p1", "name": "Coca 500ml",
+                                 "qty": 2, "subtotal": 2.4}]}
     assert captured["body"]["client_id"] == "c9"
     assert captured["body"]["payment_method"] == "whatsapp"
     assert captured["body"]["items"] == [{"product_id": "p1", "quantity": 2}]
@@ -160,6 +163,41 @@ def test_register_sale_insufficient_stock_returns_error(monkeypatch):
     assert result["ok"] is False
     assert result["error"] == "insufficient_stock"
     assert "message" in result and "detail" in result
+
+
+def test_register_sale_forwards_idempotency_key(monkeypatch):
+    """La clave tiene que llegar al RPC: es lo único que lo hace idempotente."""
+    captured = {}
+
+    async def fake_create_sale(self, ctx, body):
+        captured["body"] = body
+        return {"id": "s1", "total": 1.2, "items": []}
+
+    monkeypatch.setattr("app.services.storefront.SalesService.create_sale", fake_create_sale)
+
+    result = asyncio.run(storefront.register_sale(
+        CTX, items=[{"product_id": "p1", "quantity": 1}], idempotency_key="k-123"))
+
+    assert captured["body"]["idempotency_key"] == "k-123"
+    assert result["duplicate"] is False
+
+
+def test_register_sale_marks_idempotent_replay_as_duplicate(monkeypatch):
+    """El RPC devuelve la venta ya registrada; el shape lean tiene que decirlo."""
+
+    async def fake_create_sale(self, ctx, body):
+        return {"id": "s1", "total": 1.2, "idempotent_replay": True,
+                "items": [{"product_id": "p1", "product_name": "Agua",
+                           "quantity": 1, "total": 1.2}]}
+
+    monkeypatch.setattr("app.services.storefront.SalesService.create_sale", fake_create_sale)
+
+    result = asyncio.run(storefront.register_sale(
+        CTX, items=[{"product_id": "p1", "quantity": 1}], idempotency_key="k-123"))
+
+    assert result["ok"] is True
+    assert result["duplicate"] is True
+    assert result["total"] == 1.2
 
 
 def test_register_sale_requires_items():

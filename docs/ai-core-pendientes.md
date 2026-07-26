@@ -23,50 +23,47 @@ explícita del dueño del proyecto, no un "arreglo" incidental durante otra tare
 
 ---
 
-## 🟡 PII completa en `activity_log`
-
-**Dónde:** `app/ai_core/observability/tracing.py:36`
-
-Se guarda `input_text` y `output_text` íntegros de cada turno de cliente en la
-tabla de auditoría, sin truncar ni política de retención. Una fila por mensaje
-con el contenido literal de conversaciones de WhatsApp.
-
-**Fix:** truncar o guardar sólo hash/longitud. El detalle fino ya lo tenés en
-Langfuse cuando está configurado.
-
----
-
-## 🟡 `create_order` sin idempotencia
-
-**Dónde:** `app/ai_core/tools/sales.py` (ya documentado en el módulo)
-
-Un reintento del LLM con los mismos ítems **crea una segunda venta**. Requiere
-cambio de esquema: columna `idempotency_key` única en `sales`, chequeada antes del
-RPC. No se puede tapar con caché en proceso (no sobrevive restart ni sirve con
-varios workers).
-
----
-
 ## 🔵 Menores
 
-- **`check_stock` enmascara producto inexistente como stock 0**
-  (`app/ai_core/tools/stock.py:27`). El vendedor dirá "no hay stock" ante un
-  `product_id` alucinado en vez de detectar el id inválido y volver a buscar.
-- **`MAX_TOOL_CALLS_PER_RUN` y `GRAPH_RECURSION_LIMIT` están acoplados a mano.**
-  El comentario en `subagents/_base.py:47` razona que `2N+1` con N=5 da 11, que
-  entra en 12. Si subís el tope de tool calls sin tocar el otro, el grafo revienta
-  con `GraphRecursionError` **antes** de que el cap suave actúe, y el cliente se
-  queda sin respuesta. Merece un test que ate los dos números.
-- **`AI_CORE_URL` es el interruptor del bot** (`app/routers/webhook.py:128`)
-  aunque ya no existe ningún servicio ai-core. Vestigial y confuso.
-- **Sin lock por `thread_id`**: dos mensajes seguidos del mismo cliente lanzan dos
-  turnos concurrentes sobre el mismo checkpoint.
 - **Sin soporte de imágenes** ni de tools interactivas de WhatsApp (botones,
-  ubicación). El bridge avisa al cliente que no puede ver la imagen.
+  ubicación). El bridge avisa al cliente que no puede ver la imagen
+  (`bridge._image_note`). El audio sí se transcribe, así que el andamiaje de
+  media ya está: falta el paso de visión.
 
 ---
 
 ## Ya arreglado (no re-diagnosticar)
+
+- ✅ **`create_order` sin idempotencia.** Un reintento del modelo con los mismos
+  ítems registraba una **segunda venta**: descontaba stock de nuevo, sumaba de
+  nuevo a caja y a los rollups del cliente. `migration_v10_sale_idempotency.sql`
+  agrega `sales.idempotency_key` con índice único parcial y hace que `create_sale`
+  devuelva la venta ya registrada (`idempotent_replay: true`) en vez de crear otra;
+  el advisory lock por `(tenant, clave)` serializa dos reintentos simultáneos, así
+  que el chequeo y el insert viven en la misma transacción. La clave la deriva
+  `tools/sales.py:_idempotency_key` de `thread_id + turn_id + ítems`: el turno es
+  la línea entre "el modelo llamó dos veces" (una venta) y "el cliente recompró lo
+  mismo más tarde" (venta nueva). El `turn_id` es el id del mensaje entrante de
+  WhatsApp, así que una reentrega de Meta cae en la misma clave. Sin `turn_id` no
+  se manda clave: perder una recompra real es peor que el duplicado que evita.
+- ✅ **`register_sale` devolvía `subtotal: None` por línea.** Encontrado al tocar
+  esto: el shape lean leía `sale_items.subtotal`, columna que no existe (es
+  `total`), así que con datos reales del RPC `OrderItemResult` recibía `None` y la
+  tool reventaba en la validación de pydantic. Sólo pasaba porque los tests
+  fakeaban el shape. El shape lean ahora incluye también `product_id`, para no
+  aparear los ítems por índice contra lo que pidió el modelo.
+- ✅ **PII completa en `activity_log`.** `trace_turn` trunca `input_text` /
+  `output_text` a 120 chars y guarda la longitud aparte. El detalle fino va a
+  Langfuse.
+- ✅ **`check_stock` enmascaraba producto inexistente como stock 0.**
+  `StockResult.found` distingue "agotado" de "no existe ese id".
+- ✅ **`MAX_TOOL_CALLS_PER_RUN` / `GRAPH_RECURSION_LIMIT` acoplados a mano.**
+  Atados por `tests/test_ai_core_invariants.py` (`2N+1 <= limit`).
+- ✅ **`AI_CORE_URL` como interruptor del bot.** Ahora es `BOT_ENABLED`, con
+  `AI_CORE_URL` / `NANOBOT_RUNTIME_URL` como alias.
+- ✅ **Sin lock por `thread_id`.** `bridge._thread_lock` encola los turnos de una
+  misma conversación, con refcount para no dejar una entrada por thread para
+  siempre.
 
 - ✅ **Los prompts describían tools que no existían.** Hallazgo nuevo, encontrado
   al tocar `update_config`. `admin_agent.md` documentaba cinco tools

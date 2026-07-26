@@ -26,11 +26,13 @@ os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import asyncio
 import inspect
+from types import SimpleNamespace
 
 import pytest
 from langchain.agents.middleware import AgentMiddleware
 
 import app.ai_core.tools.catalog as catalog_tools
+import app.ai_core.tools.sales as sales_tools
 from app.ai_core.agents.context_middleware import (
     build_message_window,
     build_tool_context,
@@ -186,3 +188,125 @@ def test_role_permission_still_enforced():
     """Admin-only tools must reject the public role through the async path."""
     with pytest.raises(PermissionError):
         asyncio.run(get_sales_report.ainvoke({"ctx": _ctx("public")}))
+
+
+# --------------------------------------------------------------------------
+# create_order: idempotencia
+#
+# Un reintento del modelo con los mismos ítems creaba una segunda venta —
+# descontaba stock de nuevo y sumaba de nuevo a caja. La clave la deriva la
+# tool y la hace cumplir el RPC (migration_v10); estos tests atan la parte que
+# vive en Python: qué claves son iguales, cuáles no, y cuándo no hay clave.
+# --------------------------------------------------------------------------
+
+def _tool_call_request(tool, configurable):
+    """Stub with the surface `ToolContextMiddleware._inject` actually touches."""
+    return SimpleNamespace(
+        tool=tool,
+        tool_call={"args": {}},
+        runtime=SimpleNamespace(config={"configurable": configurable}),
+    )
+
+
+def _order_ctx(turn_id="msg-1", thread_id="t1:public:59170000002"):
+    return ToolContext(tenant=TENANT, role="public", thread_id=thread_id, turn_id=turn_id)
+
+
+def _capture_register_sale(monkeypatch, calls):
+    async def fake_register_sale(ctx, items, customer_phone=None,
+                                 payment_method="whatsapp", idempotency_key=None):
+        calls.append(idempotency_key)
+        return {"ok": True, "duplicate": len(calls) > 1, "total": 2.4,
+                "items": [{"product_id": "p1", "name": "Coca", "qty": 2, "subtotal": 2.4}]}
+
+    monkeypatch.setattr(sales_tools.storefront, "register_sale", fake_register_sale)
+
+
+def test_create_order_sends_an_idempotency_key(monkeypatch):
+    calls = []
+    _capture_register_sale(monkeypatch, calls)
+
+    asyncio.run(create_order.ainvoke(
+        {"items": [{"product_id": "p1", "quantity": 2}], "ctx": _order_ctx()}))
+
+    assert calls[0], "create_order must send an idempotency key"
+
+
+def test_retry_within_the_same_turn_reuses_the_key(monkeypatch):
+    """Este es el bug: el modelo llama dos veces y se registran dos ventas."""
+    calls = []
+    _capture_register_sale(monkeypatch, calls)
+    ctx = _order_ctx()
+    items = [{"product_id": "p1", "quantity": 2}]
+
+    first = asyncio.run(create_order.ainvoke({"items": items, "ctx": ctx}))
+    second = asyncio.run(create_order.ainvoke({"items": items, "ctx": ctx}))
+
+    assert calls[0] == calls[1], "a retry in the same turn must hit the same sale"
+    assert first.duplicate is False
+    assert second.duplicate is True, "the model must be told it was already placed"
+
+
+def test_item_order_does_not_change_the_key(monkeypatch):
+    """El modelo puede listar los ítems al revés en el reintento; sigue siendo la misma orden."""
+    calls = []
+    _capture_register_sale(monkeypatch, calls)
+    ctx = _order_ctx()
+
+    asyncio.run(create_order.ainvoke({"ctx": ctx, "items": [
+        {"product_id": "p1", "quantity": 2}, {"product_id": "p2", "quantity": 1}]}))
+    asyncio.run(create_order.ainvoke({"ctx": ctx, "items": [
+        {"product_id": "p2", "quantity": 1}, {"product_id": "p1", "quantity": 2}]}))
+
+    assert calls[0] == calls[1]
+
+
+def test_a_later_turn_is_a_new_sale(monkeypatch):
+    """Comprar lo mismo de nuevo más tarde es una venta nueva, no un duplicado."""
+    calls = []
+    _capture_register_sale(monkeypatch, calls)
+    items = [{"product_id": "p1", "quantity": 2}]
+
+    asyncio.run(create_order.ainvoke({"items": items, "ctx": _order_ctx("msg-1")}))
+    asyncio.run(create_order.ainvoke({"items": items, "ctx": _order_ctx("msg-2")}))
+
+    assert calls[0] != calls[1]
+
+
+def test_different_items_are_different_keys(monkeypatch):
+    calls = []
+    _capture_register_sale(monkeypatch, calls)
+    ctx = _order_ctx()
+
+    asyncio.run(create_order.ainvoke(
+        {"items": [{"product_id": "p1", "quantity": 2}], "ctx": ctx}))
+    asyncio.run(create_order.ainvoke(
+        {"items": [{"product_id": "p1", "quantity": 3}], "ctx": ctx}))
+
+    assert calls[0] != calls[1]
+
+
+def test_no_turn_id_means_no_key(monkeypatch):
+    """Sin turno, una clave de thread+ítems se comería la recompra legítima del
+    cliente. Perder una venta real es peor que el duplicado que esto evita."""
+    calls = []
+    _capture_register_sale(monkeypatch, calls)
+
+    asyncio.run(create_order.ainvoke(
+        {"items": [{"product_id": "p1", "quantity": 2}], "ctx": _order_ctx(turn_id="")}))
+
+    assert calls == [None]
+
+
+def test_middleware_injects_the_turn_id():
+    """La clave sale del turn_id; si el middleware no lo inyecta, no hay idempotencia."""
+    middleware = build_tool_context(TENANT, "public")
+    request = _tool_call_request(
+        create_order, {"thread_id": "t1:public:5917", "turn_id": "wamid.ABC"})
+
+    injected, _ = middleware._inject(request)
+
+    assert injected
+    ctx = request.tool_call["args"]["ctx"]
+    assert ctx.turn_id == "wamid.ABC"
+    assert ctx.thread_id == "t1:public:5917"

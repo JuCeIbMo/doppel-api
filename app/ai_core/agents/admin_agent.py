@@ -73,6 +73,7 @@ async def run_admin_agent_turn(
     tenant: TenantConfig,
     thread_id: str,
     user_message: str,
+    message_id: str | None = None,
 ) -> dict[str, Any]:
     """Run one admin turn with input guardrails and per-turn tracing.
 
@@ -87,6 +88,9 @@ async def run_admin_agent_turn(
     if not user_message:
         return {"messages": [AIMessage(content=_EMPTY_INPUT_RESPONSE)]}
 
+    # See `run_public_agent_turn`: the graph message id is per invocation, the
+    # turn id is stable across a redelivery of the same inbound message.
+    turn_id = message_id or str(uuid.uuid4())
     message_id = str(uuid.uuid4())
     start = time.time()
     run_name = "admin-support-turn"
@@ -98,7 +102,7 @@ async def run_admin_agent_turn(
     ):
         result = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message, id=message_id)]},
-            config=invocation_config(thread_id, run_name),
+            config=invocation_config(thread_id, run_name, turn_id=turn_id),
         )
     latency_ms = int((time.time() - start) * 1000)
 

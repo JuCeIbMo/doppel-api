@@ -316,6 +316,7 @@ async def _process_bot_response(
             user_phone=user_phone,
             content=inbound_text,
             media=media,
+            message_id=inbound_message_id,
         )
         if ai_response is None:
             logger.error(

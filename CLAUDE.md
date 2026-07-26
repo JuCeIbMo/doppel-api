@@ -86,6 +86,7 @@ matchee mejor las consultas de los clientes.
 ### Convenciones importantes
 
 - **`ok` en respuestas de tools**: `storefront.register_sale` devuelve siempre `{"ok": bool, ...}`. Éxito = `ok: True`, error = `ok: False, "error": code, "message": ...`.
+- **`create_order` es idempotente por turno**: la clave sale de `thread_id + turn_id + ítems` (`app/ai_core/tools/sales.py`) y la hace cumplir el RPC `create_sale` (índice único parcial en `sales(tenant_id, idempotency_key)` + advisory lock, `migration_v10_sale_idempotency.sql`). Un reintento del modelo devuelve la misma venta con `duplicate: True`; el `turn_id` es el id del mensaje de WhatsApp, así que se propaga `webhook → bridge.respond → run_*_agent_turn → configurable["turn_id"] → ToolContext`.
 - **`bridge.respond` devuelve `str | None`**: `None` = el agente crasheó (se loguea como ERROR), `""` = respondió vacío legítimamente. El webhook no envía nada en ambos casos pero los diferencia en logs.
 - **Todo el I/O de Supabase se awaitea**: `await get_supabase().table(...)...execute()`, igual para `.auth.*` y `.storage.*`. Un `async def` NUNCA debe hacer I/O bloqueante — bloquea el event loop y con él todo el server. Si te olvidás un `await`, falla ruidoso (`.data` sobre un coroutine → `AttributeError`), no en silencio.
 - **`log_activity` es best-effort**: nunca lanza excepciones — un fallo de audit log no debe romper la operación. Es `async`, hay que awaitearlo.

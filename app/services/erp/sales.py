@@ -43,6 +43,9 @@ class SalesService:
             "cash_account_id": body.get("cash_account_id"),
             "discount": body.get("discount", 0),
             "notes": body.get("notes"),
+            # Opcional. Con clave, el RPC devuelve la venta ya registrada en vez de
+            # crear una gemela (índice único parcial en sales + advisory lock).
+            "idempotency_key": body.get("idempotency_key"),
             "items": body["items"],
         }
         try:
@@ -63,8 +66,11 @@ class SalesService:
             raise
 
         sale = result.data
+        # Un replay idempotente no creó nada: se audita aparte para que el log no
+        # muestre dos ventas donde hubo una.
+        replay = bool(sale.get("idempotent_replay"))
         await log_activity(
-            ctx, action="sale.created", module="sales",
+            ctx, action="sale.replayed" if replay else "sale.created", module="sales",
             detail={
                 "sale_id": sale.get("id"),
                 "total": sale.get("total"),

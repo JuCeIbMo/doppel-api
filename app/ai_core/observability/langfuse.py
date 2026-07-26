@@ -47,10 +47,19 @@ def get_handler():
     return _handler
 
 
-def invocation_config(thread_id: str, run_name: str) -> dict[str, Any]:
-    """Build the LangGraph config and attach Langfuse when configured."""
+def invocation_config(
+    thread_id: str, run_name: str, turn_id: str | None = None
+) -> dict[str, Any]:
+    """Build the LangGraph config and attach Langfuse when configured.
+
+    ``turn_id`` identifies this single turn (the inbound WhatsApp message id when
+    there is one). It travels in `configurable` so `ToolContextMiddleware` can
+    hand it to the tools: `create_order` derives its idempotency key from it, so
+    a retry inside one turn dedupes while the same order placed again in a later
+    message is a genuinely new sale.
+    """
     config: dict[str, Any] = {
-        "configurable": {"thread_id": thread_id},
+        "configurable": {"thread_id": thread_id, "turn_id": turn_id or ""},
         "recursion_limit": GRAPH_RECURSION_LIMIT,
         "run_name": run_name,
     }

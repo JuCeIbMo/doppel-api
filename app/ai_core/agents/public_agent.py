@@ -175,8 +175,14 @@ async def run_public_agent_turn(
     tenant: TenantConfig,
     thread_id: str,
     user_message: str,
+    message_id: str | None = None,
 ) -> dict[str, Any]:
-    """Run one public turn; the checkpoint resumes the last active specialist."""
+    """Run one public turn; the checkpoint resumes the last active specialist.
+
+    ``message_id`` is the inbound WhatsApp message id when the caller has one. It
+    doubles as this turn's identity for tool idempotency (see `invocation_config`),
+    so a redelivered message cannot register the same order twice.
+    """
     try:
         user_message = sanitize_user_input(user_message)
     except InputTooLongError:
@@ -185,6 +191,10 @@ async def run_public_agent_turn(
     if not user_message:
         return {"messages": [AIMessage(content=_EMPTY_INPUT_RESPONSE)]}
 
+    # The graph message id stays unique per invocation (it is how the turn's own
+    # messages are located below); `turn_id` is the one that must be stable across
+    # a redelivery of the same inbound message.
+    turn_id = message_id or str(uuid.uuid4())
     message_id = str(uuid.uuid4())
     start = time.time()
     run_name = "public-support-turn"
@@ -196,7 +206,7 @@ async def run_public_agent_turn(
     ):
         result = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message, id=message_id)]},
-            config=invocation_config(thread_id, run_name),
+            config=invocation_config(thread_id, run_name, turn_id=turn_id),
         )
     latency_ms = int((time.time() - start) * 1000)
 

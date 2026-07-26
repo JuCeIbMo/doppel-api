@@ -66,7 +66,9 @@ class ToolContextMiddleware(AgentMiddleware):
         original_args = request.tool_call.get("args", {})
         if tool is None or not _tool_accepts_ctx(tool):
             return False, original_args
-        thread_id = request.runtime.config.get("configurable", {}).get("thread_id", "")
+        configurable = request.runtime.config.get("configurable", {})
+        thread_id = configurable.get("thread_id", "")
+        turn_id = configurable.get("turn_id", "")
         # Inject ctx into a copy of the args so the original tool_call stored in
         # the assistant message is not polluted with a non-JSON-serializable object.
         request.tool_call["args"] = {
@@ -75,6 +77,7 @@ class ToolContextMiddleware(AgentMiddleware):
                 tenant=self.tenant,
                 role=self.role,
                 thread_id=thread_id,
+                turn_id=turn_id,
             ),
         }
         return True, original_args

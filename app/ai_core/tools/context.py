@@ -14,6 +14,10 @@ class ToolContext:
     tenant: TenantConfig
     role: str
     thread_id: str
+    # Identifies the turn this tool call belongs to (the inbound WhatsApp message
+    # id when available, otherwise a per-turn uuid). `create_order` keys its
+    # idempotency off it — see `tools/sales.py`.
+    turn_id: str = ""
 
 
 _UNDEFINED = FieldInfo(annotation=str).default

@@ -184,7 +184,7 @@ def test_same_thread_turns_do_not_overlap(monkeypatch):
     async def fake_build_public_agent(_tenant):
         return object()
 
-    async def fake_run_turn(agent, tenant, thread_id, text):
+    async def fake_run_turn(agent, tenant, thread_id, text, message_id=None):
         nonlocal overlaps, active
         active += 1
         if active > 1:
@@ -260,7 +260,7 @@ def test_different_threads_still_run_concurrently(monkeypatch):
     async def fake_build_public_agent(_tenant):
         return object()
 
-    async def fake_run_turn(agent, tenant, thread_id, text):
+    async def fake_run_turn(agent, tenant, thread_id, text, message_id=None):
         nonlocal active, peak
         active += 1
         peak = max(peak, active)
