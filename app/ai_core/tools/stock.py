@@ -17,15 +17,21 @@ def _erp_ctx(ctx: ToolContext):
 
 @contextual_tool
 async def check_stock(product_id: str, ctx: ToolContext) -> StockResult:
-    """Check available stock for a product by its id (as returned by search_catalog)."""
+    """Check available stock for a product by its id (as returned by search_catalog).
+
+    If `found` is false the id does not exist — do not tell the customer the
+    product is out of stock. Search the catalog again to get a real id.
+    """
     if ctx.role not in {"public", "admin"}:
         raise PermissionError("check_stock requires public or admin role")
 
     try:
         product = await ProductsService().get(_erp_ctx(ctx), product_id)
     except NotFound:
-        return StockResult(product_id=product_id, quantity=0)
-    return StockResult(product_id=product_id, quantity=float(product.get("stock", 0)))
+        return StockResult(product_id=product_id, quantity=0, found=False)
+    return StockResult(
+        product_id=product_id, quantity=float(product.get("stock", 0)), found=True
+    )
 
 
 @contextual_tool

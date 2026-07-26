@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 
 from app.ai_core.agents.admin_agent import build_admin_agent, run_admin_agent_turn
 from app.ai_core.agents.public_agent import build_public_agent, run_public_agent_turn
@@ -36,6 +37,10 @@ _agents_lock = asyncio.Lock()
 # are cheap to rebuild (no I/O beyond grabbing a pooled connection), so the
 # oldest entry is simply dropped.
 MAX_CACHED_AGENTS = 100
+
+# One lock per live conversation, refcounted (see `_thread_lock`).
+_thread_locks: dict[str, tuple[asyncio.Lock, int]] = {}
+_thread_locks_guard = asyncio.Lock()
 
 
 def _document_note(media: list[dict] | None) -> str:
@@ -89,6 +94,33 @@ async def _get_or_build_agent(tenant: TenantConfig, role: str):
         return agent
 
 
+@asynccontextmanager
+async def _thread_lock(thread_id: str):
+    """Serialize turns on one conversation.
+
+    A customer sending two messages in a row fires two background tasks that
+    run the graph against the same checkpoint at once: both read the same
+    state, both write, and the second write wins — so one message effectively
+    never happened, and the swarm's `active_agent` can end up on whichever
+    turn finished last. Queue them instead.
+
+    Refcounted so the dict does not grow one entry per conversation forever.
+    """
+    async with _thread_locks_guard:
+        lock, waiters = _thread_locks.get(thread_id) or (asyncio.Lock(), 0)
+        _thread_locks[thread_id] = (lock, waiters + 1)
+    try:
+        async with lock:
+            yield
+    finally:
+        async with _thread_locks_guard:
+            lock, waiters = _thread_locks[thread_id]
+            if waiters <= 1:
+                del _thread_locks[thread_id]
+            else:
+                _thread_locks[thread_id] = (lock, waiters - 1)
+
+
 async def _evict_agent(key: tuple[str, str]) -> None:
     """Drop a cached agent so the next message rebuilds it from scratch.
 
@@ -135,7 +167,8 @@ async def respond(
 
         agent = await _get_or_build_agent(tenant, role)
         run_turn = run_admin_agent_turn if role == "admin" else run_public_agent_turn
-        result = await run_turn(agent, tenant, thread_id, text)
+        async with _thread_lock(thread_id):
+            result = await run_turn(agent, tenant, thread_id, text)
 
         messages = result.get("messages", [])
         last = messages[-1] if messages else None

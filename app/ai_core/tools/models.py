@@ -13,6 +13,11 @@ class ProductResult(BaseModel):
 class StockResult(BaseModel):
     product_id: str
     quantity: float
+    # Distinguishes "this product has none left" from "no such product". Both
+    # used to come back as quantity 0, so a hallucinated id read to the model as
+    # a sold-out product and it told the customer there was no stock instead of
+    # searching again.
+    found: bool = True
 
 
 class OrderItemInput(BaseModel):
