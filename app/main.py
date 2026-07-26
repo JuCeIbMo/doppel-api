@@ -37,6 +37,11 @@ async def lifespan(app: FastAPI):
     logger.info("doppel-api started")
     yield
     await app.state.http_client.aclose()
+    # Imported here, not at module scope: pulling in langgraph on every import
+    # of `app.main` is dead weight for deployments with the bot disabled.
+    from app.ai_core.persistence.checkpointer import close_pool
+
+    await close_pool()
     logger.info("doppel-api stopped")
 
 

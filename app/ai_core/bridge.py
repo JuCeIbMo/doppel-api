@@ -8,9 +8,11 @@ Reemplaza a `app/ai/bridge.py` (Agno). Diferencias del contrato viejo:
 - No soporta imágenes todavía (ver `media/transcription.py`) — solo texto y
   transcripción de audio.
 
-Cachea un agente compilado por `(tenant_id, role)` para no abrir una conexión
-de checkpointer nueva en cada mensaje. Sin invalidación por cambios de config
-todavía (ver TODO abajo) — conocido, no oculto.
+Cachea un agente compilado por `(tenant_id, role)` para no reconstruir el grafo
+en cada mensaje (la conexión sale del pool compartido de `persistence`). El
+caché se desaloja cuando un turno falla, así un error transitorio no queda
+pegado. Sin invalidación por cambios de config todavía (ver TODO abajo) —
+conocido, no oculto.
 """
 
 from __future__ import annotations
@@ -28,6 +30,11 @@ logger = logging.getLogger("doppel.ai_core.bridge")
 
 _agents: dict[tuple[str, str], object] = {}
 _agents_lock = asyncio.Lock()
+
+# Cap the cache so a long tail of tenants cannot grow it without bound. Agents
+# are cheap to rebuild (no I/O beyond grabbing a pooled connection), so the
+# oldest entry is simply dropped.
+MAX_CACHED_AGENTS = 100
 
 
 def _document_note(media: list[dict] | None) -> str:
@@ -57,8 +64,22 @@ async def _get_or_build_agent(tenant: TenantConfig, role: str):
                 if role == "admin"
                 else await build_public_agent(tenant)
             )
+            while len(_agents) >= MAX_CACHED_AGENTS:
+                _agents.pop(next(iter(_agents)))
             _agents[key] = agent
         return agent
+
+
+async def _evict_agent(key: tuple[str, str]) -> None:
+    """Drop a cached agent so the next message rebuilds it from scratch.
+
+    Without this, a failed turn is permanent rather than transient: the broken
+    agent stays in `_agents`, every later message for that tenant hits the same
+    object, and since `respond` returns `None` the webhook sends nothing — the
+    customer just gets silence, with no error anywhere but the logs.
+    """
+    async with _agents_lock:
+        _agents.pop(key, None)
 
 
 async def respond(
@@ -74,9 +95,11 @@ async def respond(
         "[START] tenant=%s phone=%s media=%s texto_chars=%d",
         tenant_id, user_phone, media_types, len(content or ""),
     )
+    agent_key: tuple[str, str] | None = None
     try:
         tenant = await load_tenant_config(tenant_id)
         role = resolve_role(user_phone, tenant)
+        agent_key = (tenant_id, role)
         thread_id = f"{tenant_id}:{role}:{user_phone}"
 
         transcript = await transcribe_audio_media(media)
@@ -106,4 +129,6 @@ async def respond(
         return reply
     except Exception:
         logger.exception("respuesta IA falló tenant=%s phone=%s", tenant_id, user_phone)
+        if agent_key is not None:
+            await _evict_agent(agent_key)
         return None

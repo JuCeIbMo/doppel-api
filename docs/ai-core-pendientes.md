@@ -8,35 +8,15 @@ Ordenado por riesgo real, no por esfuerzo.
 
 ---
 
-## 🔴 Verificar `deepseek-v4-flash`
+## 🟠 `update_config` no actualiza nada
 
-**Dónde:** `app/ai_core/agents/llm.py:18` (`DEFAULT_MODEL`)
+**Dónde:** `app/ai_core/tools/config.py`
 
-El id por defecto no coincide con los modelos conocidos de DeepSeek
-(`deepseek-chat`, `deepseek-reasoner`). Si es incorrecto, **todo turno del bot
-falla en el primer request** — no hay degradación parcial, el bot simplemente no
-responde nunca.
+El nombre y el parámetro `requested_changes` le dicen al modelo que puede
+escribir; el cuerpo sólo lee. El dueño va a pedir un cambio y el admin agent va a
+contestar que lo hizo.
 
-Es lo más barato de comprobar y lo más caro de tener mal. Se overridea sin tocar
-código con `LLM_MODEL`, `LLM_MODEL_ROUTER`, `LLM_MODEL_PUBLIC`, `LLM_MODEL_ADMIN`.
-
----
-
-## 🟠 Conexiones Postgres por `(tenant, role)`, sin pool ni reconexión
-
-**Dónde:** `app/ai_core/persistence/checkpointer.py`, `app/ai_core/bridge.py:_agents`
-
-`open_checkpointer()` abre una conexión por cada `(tenant_id, role)` que aparezca,
-y `bridge._agents` cachea el agente —y con él la conexión— para siempre.
-
-- Con N tenants activos: N conexiones abiertas de por vida.
-- Si Postgres corta una, ese tenant queda muerto **hasta reiniciar el proceso**:
-  el agente cacheado sigue apuntando a la conexión rota.
-- `attach_lifecycle` ya expone `aclose()`, pero **nadie lo llama**.
-
-**Fix:** un `AsyncConnectionPool` de psycopg compartido en vez de una conexión por
-agente, y un tope en `_agents` (o TTL). El `aclose()` ya existe para el cierre
-ordenado en el lifespan.
+**Fix:** renombrar a `get_config` / `suggest_config_changes`.
 
 ---
 
@@ -81,18 +61,6 @@ Langfuse cuando está configurado.
 
 ---
 
-## 🟡 `update_config` no actualiza nada
-
-**Dónde:** `app/ai_core/tools/config.py`
-
-El nombre y el parámetro `requested_changes` le dicen al modelo que puede
-escribir; el cuerpo sólo lee. El dueño va a pedir un cambio y el admin agent va a
-contestar que lo hizo.
-
-**Fix:** renombrar a `get_config` / `suggest_config_changes`.
-
----
-
 ## 🟡 `create_order` sin idempotencia
 
 **Dónde:** `app/ai_core/tools/sales.py` (ya documentado en el módulo)
@@ -124,6 +92,21 @@ varios workers).
 ---
 
 ## Ya arreglado (no re-diagnosticar)
+
+- ✅ **`deepseek-v4-flash` es un id válido.** Descartado por observación: el bot
+  responde en producción. Se overridea igual con `LLM_MODEL`,
+  `LLM_MODEL_ROUTER`, `LLM_MODEL_PUBLIC`, `LLM_MODEL_ADMIN`.
+- ✅ **Una conexión Postgres cruda cacheada de por vida, sin evicción al fallar.**
+  Era el peor de la lista: `from_conn_string` abre una `AsyncConnection` sola,
+  psycopg no reconecta, `bridge._agents` la cacheaba para siempre y el `except`
+  de `respond` no desalojaba nada. Una conexión caída (restart de Postgres, idle
+  reaper, corte de red) dejaba ese tenant **mudo hasta reiniciar el proceso**, y
+  en silencio: `respond` devuelve `None`, el webhook no manda nada y Meta recibe
+  200. Ahora hay un `AsyncConnectionPool` compartido por proceso con
+  `check=check_connection`, `setup()` una sola vez, evicción de `_agents` cuando
+  un turno falla, tope de `MAX_CACHED_AGENTS`, y `close_pool()` en el lifespan.
+  `agents/lifecycle.py` se borró: con un pool compartido, cerrarlo por agente
+  sería cerrárselo a todos. Cubierto por `tests/test_checkpointer_pool.py`.
 
 - ✅ **Las tools no ejecutaban.** `contextual_tool` registraba funciones async como
   `func=` en vez de `coroutine=`; LangChain le entregaba al modelo un coroutine sin

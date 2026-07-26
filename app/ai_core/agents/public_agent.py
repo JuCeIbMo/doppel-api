@@ -15,7 +15,6 @@ from app.ai_core.agents.handoffs import (
     build_handoff_tools,
     handoff_targets,
 )
-from app.ai_core.agents.lifecycle import attach_lifecycle
 from app.ai_core.agents.llm import resolve_model_name
 from app.ai_core.agents.router import build_router_graph
 from app.ai_core.config.tenant import TenantConfig
@@ -124,7 +123,7 @@ async def build_public_agent(tenant: TenantConfig):
         for name in enabled
     }
     fallback = enabled[0]
-    checkpointer_ctx, checkpointer = await open_checkpointer()
+    checkpointer = await open_checkpointer()
 
     async def initial_router(state: PublicSwarmState) -> Command:
         recent_messages = [
@@ -168,10 +167,7 @@ async def build_public_agent(tenant: TenantConfig):
         path_map=["initial_router", *enabled],
     )
 
-    agent = builder.compile(checkpointer=checkpointer)
-    agent._checkpointer_ctx = checkpointer_ctx
-    attach_lifecycle(agent)
-    return agent
+    return builder.compile(checkpointer=checkpointer)
 
 
 async def run_public_agent_turn(

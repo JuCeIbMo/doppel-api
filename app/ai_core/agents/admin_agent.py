@@ -10,7 +10,6 @@ from app.ai_core.agents.guardrails import (
     InputTooLongError,
     sanitize_user_input,
 )
-from app.ai_core.agents.lifecycle import attach_lifecycle
 from app.ai_core.agents.llm import build_chat_model, resolve_model_name
 from app.ai_core.config.tenant import TenantConfig
 from app.ai_core.observability.langfuse import (
@@ -55,7 +54,7 @@ async def build_admin_agent(tenant: TenantConfig):
     system_prompt = load_prompt(tenant, "admin", "admin_agent")
     tools = allowed_tools_for(tenant, "admin", _ADMIN_DEFAULT_TOOLS)
     model = build_chat_model("admin", temperature=0.3)
-    checkpointer_ctx, checkpointer = await open_checkpointer()
+    checkpointer = await open_checkpointer()
 
     agent = create_agent(
         name="admin_agent",
@@ -65,10 +64,6 @@ async def build_admin_agent(tenant: TenantConfig):
         checkpointer=checkpointer,
         middleware=specialist_middleware(tenant, "admin"),
     )
-
-    agent._checkpointer_ctx = checkpointer_ctx
-
-    attach_lifecycle(agent)
 
     return agent
 
