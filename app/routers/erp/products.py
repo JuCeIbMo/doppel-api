@@ -56,9 +56,9 @@ async def analyze_image(
     configurado, igual devuelve la `image_url` con `ai_ok=false`.
     """
     optimized = optimize_image(await file.read())
-    image_url = upload_product_image(ctx.tenant_id, optimized)
+    image_url = await upload_product_image(ctx.tenant_id, optimized)
     analysis = analyze_product_image(optimized, "image/webp")
-    log_activity(ctx, action="product.image_analyzed", module="inventory",
+    await log_activity(ctx, action="product.image_analyzed", module="inventory",
                  detail={"ai_ok": analysis["ai_ok"]})
     return ProductImageAnalysis(image_url=image_url, **analysis)
 
@@ -127,7 +127,7 @@ async def import_products(
         except Exception as exc:  # noqa: BLE001 — per-row, reported not raised
             errors.append({"row": i, "reason": str(exc)})
 
-    log_activity(ctx, action="products.imported", module="inventory",
+    await log_activity(ctx, action="products.imported", module="inventory",
                  detail={"imported": imported, "error_count": len(errors)})
     return ImportResult(imported=imported, errors=errors)
 

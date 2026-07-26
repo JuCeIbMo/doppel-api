@@ -46,7 +46,7 @@ class SalesService:
             "items": body["items"],
         }
         try:
-            result = get_supabase().rpc(
+            result = await get_supabase().rpc(
                 "create_sale",
                 {"payload": payload, "p_tenant_id": ctx.tenant_id, "p_actor": ctx.actor},
             ).execute()
@@ -63,7 +63,7 @@ class SalesService:
             raise
 
         sale = result.data
-        log_activity(
+        await log_activity(
             ctx, action="sale.created", module="sales",
             detail={
                 "sale_id": sale.get("id"),
@@ -76,7 +76,7 @@ class SalesService:
 
     async def cancel_sale(self, ctx: ERPContext, sale_id: str) -> dict:
         try:
-            result = get_supabase().rpc(
+            result = await get_supabase().rpc(
                 "cancel_sale",
                 {"p_sale_id": sale_id, "p_tenant_id": ctx.tenant_id, "p_actor": ctx.actor},
             ).execute()
@@ -89,7 +89,7 @@ class SalesService:
             logger.exception("cancel_sale RPC failed tenant=%s", ctx.tenant_id)
             raise
 
-        log_activity(ctx, action="sale.cancelled", module="sales", detail={"sale_id": sale_id})
+        await log_activity(ctx, action="sale.cancelled", module="sales", detail={"sale_id": sale_id})
         return result.data
 
     async def list(self, ctx: ERPContext, *, client_id: str | None = None,
@@ -105,11 +105,11 @@ class SalesService:
             q = q.gte("created_at", date_from)
         if date_to:
             q = q.lte("created_at", date_to)
-        return (q.range(offset, offset + limit - 1).execute()).data or []
+        return (await q.range(offset, offset + limit - 1).execute()).data or []
 
     async def get(self, ctx: ERPContext, sale_id: str) -> dict:
         rows = (
-            get_supabase().table("sales").select("*, items:sale_items(*)")
+            await get_supabase().table("sales").select("*, items:sale_items(*)")
             .eq("tenant_id", ctx.tenant_id).eq("id", sale_id).limit(1).execute()
         ).data
         if not rows:

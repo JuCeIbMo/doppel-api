@@ -25,18 +25,18 @@ _OTP_IP_MAX = 10
 _OTP_IP_WINDOW_MINUTES = 5
 
 
-def _check_otp_rate_limits(email: str, ip: str) -> None:
+async def _check_otp_rate_limits(email: str, ip: str) -> None:
     supabase = get_supabase()
     now = datetime.now(timezone.utc)
 
     email_cutoff = (now - timedelta(minutes=_OTP_EMAIL_WINDOW_MINUTES)).isoformat()
     email_count = (
-        supabase.table("login_attempts")
+        (await supabase.table("login_attempts")
         .select("id", count="exact")
         .eq("email", email)
         .eq("ip_address", f"otp:{ip}")
         .gte("attempted_at", email_cutoff)
-        .execute()
+        .execute())
         .count
     )
     if email_count >= _OTP_EMAIL_MAX:
@@ -47,11 +47,11 @@ def _check_otp_rate_limits(email: str, ip: str) -> None:
 
     ip_cutoff = (now - timedelta(minutes=_OTP_IP_WINDOW_MINUTES)).isoformat()
     ip_count = (
-        supabase.table("login_attempts")
+        (await supabase.table("login_attempts")
         .select("id", count="exact")
         .eq("ip_address", f"otp:{ip}")
         .gte("attempted_at", ip_cutoff)
-        .execute()
+        .execute())
         .count
     )
     if ip_count >= _OTP_IP_MAX:
@@ -65,10 +65,10 @@ def _check_otp_rate_limits(email: str, ip: str) -> None:
 async def send_otp(request: Request, data: OTPSendRequest):
     """Send a 6-digit OTP to the email. Creates the user if they don't exist."""
     ip = client_ip(request)
-    _check_otp_rate_limits(data.email, ip)
+    await _check_otp_rate_limits(data.email, ip)
 
     try:
-        get_supabase_auth().auth.sign_in_with_otp({
+        await get_supabase_auth().auth.sign_in_with_otp({
             "email": data.email,
             "options": {"should_create_user": True},
         })
@@ -77,7 +77,7 @@ async def send_otp(request: Request, data: OTPSendRequest):
 
     # Record attempt for rate limiting (prefix ip with "otp:" to separate from login attempts)
     try:
-        get_supabase().table("login_attempts").insert({
+        await get_supabase().table("login_attempts").insert({
             "email": data.email,
             "ip_address": f"otp:{ip}",
         }).execute()
@@ -92,7 +92,7 @@ async def send_otp(request: Request, data: OTPSendRequest):
 async def verify_otp(data: OTPVerifyRequest):
     """Verify the OTP code and return a session JWT."""
     try:
-        response = get_supabase_auth().auth.verify_otp({
+        response = await get_supabase_auth().auth.verify_otp({
             "email": data.email,
             "token": data.token,
             "type": "email",
@@ -121,7 +121,7 @@ async def verify_otp(data: OTPVerifyRequest):
 async def refresh_token(data: TokenRefreshRequest):
     """Exchange a refresh_token for a new access_token."""
     try:
-        response = get_supabase_auth().auth.refresh_session(data.refresh_token)
+        response = await get_supabase_auth().auth.refresh_session(data.refresh_token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -150,7 +150,7 @@ async def me(current_user=Depends(get_current_user)):
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(current_user=Depends(get_current_user)):
     try:
-        get_supabase_auth().auth.admin.sign_out(str(current_user.id))
+        await get_supabase_auth().auth.admin.sign_out(str(current_user.id))
     except Exception:
         pass  # Best-effort: invalidate refresh token server-side
     return None

@@ -9,6 +9,8 @@ os.environ.setdefault("SUPABASE_URL", "http://localhost")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
 os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
 
+import asyncio
+
 from app.services import storage
 
 
@@ -17,10 +19,10 @@ class _FakeBucket:
         self.uploaded = None
         self.public_arg = None
 
-    def upload(self, path, file, file_options=None):
+    async def upload(self, path, file, file_options=None):
         self.uploaded = {"path": path, "file": file, "file_options": file_options}
 
-    def get_public_url(self, path):
+    async def get_public_url(self, path):
         self.public_arg = path
         return f"https://cdn.test/{path}"
 
@@ -44,7 +46,7 @@ def test_upload_returns_public_url(monkeypatch):
     bucket = _FakeBucket()
     monkeypatch.setattr(storage, "get_supabase", lambda: _FakeSupabase(_FakeStorage(bucket)))
 
-    url = storage.upload_product_image("t1", b"webp-bytes")
+    url = asyncio.run(storage.upload_product_image("t1", b"webp-bytes"))
 
     assert url.startswith("https://cdn.test/")
     assert bucket.uploaded["file"] == b"webp-bytes"
@@ -60,5 +62,5 @@ def test_upload_uses_configured_bucket(monkeypatch):
     monkeypatch.setattr(storage, "get_supabase", lambda: _FakeSupabase(fake_storage))
     monkeypatch.setattr(storage.settings, "PRODUCT_IMAGES_BUCKET", "mi-bucket")
 
-    storage.upload_product_image("t9", b"x")
+    asyncio.run(storage.upload_product_image("t9", b"x"))
     assert fake_storage.from_arg == "mi-bucket"

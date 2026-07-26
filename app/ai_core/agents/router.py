@@ -100,12 +100,12 @@ def build_router_graph(tenant: TenantConfig):
         IntentClassification, method="function_calling"
     )
 
-    def classify_intent(state: RouterState):
+    async def classify_intent(state: RouterState):
         system_prompt = _classifier_prompt(tenant)
         messages = [SystemMessage(content=system_prompt)] + [
             _message_to_langchain(msg) for msg in state["messages"]
         ]
-        result = model.invoke(messages)
+        result = await model.ainvoke(messages)
         return {
             "intent": result.intent,
             "confidence": result.confidence,

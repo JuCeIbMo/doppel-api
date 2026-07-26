@@ -12,7 +12,7 @@ os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
 os.environ.setdefault("SUPABASE_URL", "http://localhost")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
 os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("AGNO_DB_URL", "postgresql+psycopg://ai:ai@localhost:5532/ai")
+os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import asyncio
 
@@ -31,7 +31,7 @@ class _BizQuery:
             assert value == "t1"
         return self
     def limit(self, *a, **k): return self
-    def execute(self):
+    async def execute(self):
         rows = self._rows
         class R:
             data = rows

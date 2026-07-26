@@ -19,9 +19,9 @@ def default_period(date_from: str | None, date_to: str | None) -> tuple[str, str
     return (date_from or today.replace(day=1).isoformat(), date_to or today.isoformat())
 
 
-def _sale_items_in_period(tenant_id: str, date_from: str, date_to: str) -> list[dict]:
+async def _sale_items_in_period(tenant_id: str, date_from: str, date_to: str) -> list[dict]:
     return (
-        get_supabase().table("sale_items")
+        await get_supabase().table("sale_items")
         .select("product_id, product_name, quantity, unit_price, unit_cost, total, "
                 "products(category), sales!inner(status, created_at, client_id)")
         .eq("tenant_id", tenant_id)
@@ -42,10 +42,10 @@ class ReportsService:
         self.finance = FinanceService()
 
     async def dashboard(self, ctx: ERPContext, *, date_from: str, date_to: str) -> dict:
-        items = _sale_items_in_period(ctx.tenant_id, date_from, date_to)
+        items = await _sale_items_in_period(ctx.tenant_id, date_from, date_to)
 
         sales = (
-            get_supabase().table("sales").select("id, total")
+            await get_supabase().table("sales").select("id, total")
             .eq("tenant_id", ctx.tenant_id).eq("status", "completed")
             .gte("created_at", date_from).lte("created_at", f"{date_to}T23:59:59").execute()
         ).data or []
@@ -57,7 +57,7 @@ class ReportsService:
         margin_pct = round((gross_margin / revenue * 100) if revenue else 0, 1)
 
         new_clients = (
-            get_supabase().table("clients").select("id", count="exact")
+            await get_supabase().table("clients").select("id", count="exact")
             .eq("tenant_id", ctx.tenant_id)
             .gte("created_at", date_from).lte("created_at", f"{date_to}T23:59:59").execute()
         ).count or 0
@@ -87,7 +87,7 @@ class ReportsService:
 
     async def top_products(self, ctx: ERPContext, *, date_from: str, date_to: str,
                            limit: int = 5) -> list[dict]:
-        items = _sale_items_in_period(ctx.tenant_id, date_from, date_to)
+        items = await _sale_items_in_period(ctx.tenant_id, date_from, date_to)
         agg: dict[str, dict] = {}
         for i in items:
             a = agg.setdefault(i["product_name"], {"product_name": i["product_name"], "units": 0.0, "revenue": 0.0})
@@ -102,7 +102,7 @@ class ReportsService:
     async def sales_by_period(self, ctx: ERPContext, *, date_from: str, date_to: str,
                               group_by: str = "day") -> list[dict]:
         sales = (
-            get_supabase().table("sales").select("total, created_at")
+            await get_supabase().table("sales").select("total, created_at")
             .eq("tenant_id", ctx.tenant_id).eq("status", "completed")
             .gte("created_at", date_from).lte("created_at", f"{date_to}T23:59:59").execute()
         ).data or []
@@ -125,7 +125,7 @@ class ReportsService:
                 for k, v in sorted(agg.items())]
 
     async def margin(self, ctx: ERPContext, *, date_from: str, date_to: str) -> dict:
-        items = _sale_items_in_period(ctx.tenant_id, date_from, date_to)
+        items = await _sale_items_in_period(ctx.tenant_id, date_from, date_to)
         by_product: dict[str, dict] = {}
         by_category: dict[str, dict] = defaultdict(lambda: {"revenue": 0.0, "margin": 0.0})
         for i in items:
@@ -157,12 +157,12 @@ class ReportsService:
 
     async def clients(self, ctx: ERPContext, *, date_from: str, date_to: str) -> dict:
         sales = (
-            get_supabase().table("sales").select("client_id, total")
+            await get_supabase().table("sales").select("client_id, total")
             .eq("tenant_id", ctx.tenant_id).eq("status", "completed")
             .gte("created_at", date_from).lte("created_at", f"{date_to}T23:59:59").execute()
         ).data or []
         new_clients = (
-            get_supabase().table("clients").select("id", count="exact")
+            await get_supabase().table("clients").select("id", count="exact")
             .eq("tenant_id", ctx.tenant_id)
             .gte("created_at", date_from).lte("created_at", f"{date_to}T23:59:59").execute()
         ).count or 0
@@ -176,7 +176,7 @@ class ReportsService:
         returning_clients = 0
         if spend:
             prior = (
-                get_supabase().table("sales").select("client_id")
+                await get_supabase().table("sales").select("client_id")
                 .eq("tenant_id", ctx.tenant_id).eq("status", "completed")
                 .in_("client_id", list(spend.keys()))
                 .lt("created_at", date_from).execute()
@@ -187,7 +187,7 @@ class ReportsService:
         top = []
         if top_ids:
             rows = (
-                get_supabase().table("clients").select("id, name")
+                await get_supabase().table("clients").select("id, name")
                 .eq("tenant_id", ctx.tenant_id).in_("id", [cid for cid, _ in top_ids]).execute()
             ).data or []
             names = {r["id"]: r["name"] for r in rows}

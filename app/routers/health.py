@@ -47,7 +47,7 @@ async def preflight():
 
     # 3. Supabase reachable
     try:
-        get_supabase().table("tenants").select("id").limit(1).execute()
+        await get_supabase().table("tenants").select("id").limit(1).execute()
         checks["supabase"] = "ok"
     except Exception as e:
         logger.exception("Preflight supabase check failed")

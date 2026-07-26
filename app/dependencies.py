@@ -22,7 +22,7 @@ async def get_current_user(
     token = credentials.credentials
     try:
         supabase = get_supabase_auth()
-        response = supabase.auth.get_user(token)
+        response = await supabase.auth.get_user(token)
         return response.user
     except Exception:
         raise HTTPException(
@@ -34,7 +34,7 @@ async def get_current_user(
 
 async def get_current_tenant(current_user=Depends(get_current_user)):
     """Resolve the tenant for the authenticated user. Raises 404 if not onboarded."""
-    result = get_supabase().table("tenants").select("*").eq("user_id", str(current_user.id)).execute()
+    result = await get_supabase().table("tenants").select("*").eq("user_id", str(current_user.id)).execute()
     if not result.data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

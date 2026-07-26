@@ -10,7 +10,7 @@ from app.ai_core.config.tenant import TenantConfig
 from app.services.erp.context import bot_context, log_activity
 
 
-def trace_turn(
+async def trace_turn(
     tenant: TenantConfig,
     thread_id: str,
     role: str,
@@ -23,7 +23,7 @@ def trace_turn(
     latency_ms: int,
 ) -> None:
     actor = "whatsapp_bot" if role == "public" else "admin_bot"
-    log_activity(
+    await log_activity(
         bot_context(tenant.tenant_id, actor=actor),
         action="ai.turn",
         module="ai",

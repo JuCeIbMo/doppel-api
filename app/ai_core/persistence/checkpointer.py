@@ -8,7 +8,9 @@ tenant, same as any other multi-tenant table in doppel-api.
 
 from __future__ import annotations
 
-from langgraph.checkpoint.postgres import PostgresSaver
+from typing import Any
+
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.config import settings
 
@@ -22,13 +24,18 @@ def get_chat_db_url() -> str:
     return settings.CHAT_DB_URL
 
 
-def open_checkpointer() -> PostgresSaver:
+async def open_checkpointer() -> tuple[Any, AsyncPostgresSaver]:
     """Open a checkpointer connection and run its one-time `.setup()`.
 
-    Returns the checkpointer itself; the caller is responsible for exiting the
-    context manager it came from (see `agents/lifecycle.py`).
+    Async on purpose: the agents drive the graph with `ainvoke` so the webhook's
+    event loop is never blocked, and the synchronous `PostgresSaver` does not
+    implement LangGraph's async checkpoint methods at all (`aget_tuple`/`aput`
+    raise `NotImplementedError`) — only `AsyncPostgresSaver` works on that path.
+
+    Returns `(context_manager, checkpointer)`; the caller is responsible for
+    exiting the context manager (see `agents/lifecycle.py`).
     """
-    checkpointer_ctx = PostgresSaver.from_conn_string(get_chat_db_url())
-    checkpointer = checkpointer_ctx.__enter__()
-    checkpointer.setup()
+    checkpointer_ctx = AsyncPostgresSaver.from_conn_string(get_chat_db_url())
+    checkpointer = await checkpointer_ctx.__aenter__()
+    await checkpointer.setup()
     return checkpointer_ctx, checkpointer

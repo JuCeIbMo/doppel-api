@@ -31,15 +31,23 @@ class ToolGuardrailMiddleware(AgentMiddleware):
     def _error_message(self, tool_name: str) -> str:
         return f"Error: tool '{tool_name}' is not allowed for role '{self.role}'."
 
+    def _rejection(self, request: ToolCallRequest) -> ToolMessage | None:
+        tool_name = request.tool_call["name"]
+        if tool_name in self.allowed:
+            return None
+        return ToolMessage(
+            content=self._error_message(tool_name),
+            tool_call_id=request.tool_call.get("id", ""),
+        )
+
     def wrap_tool_call(self, request: ToolCallRequest, handler):
         """AgentMiddleware hook used by create_agent."""
-        tool_name = request.tool_call["name"]
-        if tool_name not in self.allowed:
-            return ToolMessage(
-                content=self._error_message(tool_name),
-                tool_call_id=request.tool_call.get("id", ""),
-            )
-        return handler(request)
+        rejection = self._rejection(request)
+        return rejection if rejection is not None else handler(request)
+
+    async def awrap_tool_call(self, request: ToolCallRequest, handler):
+        rejection = self._rejection(request)
+        return rejection if rejection is not None else await handler(request)
 
     def __call__(self, request, handler):
         """Functional interface used by unit tests."""
@@ -57,17 +65,26 @@ class ToolErrorMiddleware(AgentMiddleware):
 
     tools = ()
 
+    def _error_result(self, request: ToolCallRequest, exc: Exception) -> ToolMessage:
+        tool_name = request.tool_call.get("name", "unknown")
+        logger.warning("Tool '%s' failed: %s", tool_name, exc)
+        return ToolMessage(
+            content=f"Error: {exc}",
+            tool_call_id=request.tool_call.get("id", ""),
+            status="error",
+        )
+
     def wrap_tool_call(self, request: ToolCallRequest, handler):
         try:
             return handler(request)
         except Exception as exc:  # noqa: BLE001 - this is the tool error boundary
-            tool_name = request.tool_call.get("name", "unknown")
-            logger.warning("Tool '%s' failed: %s", tool_name, exc)
-            return ToolMessage(
-                content=f"Error: {exc}",
-                tool_call_id=request.tool_call.get("id", ""),
-                status="error",
-            )
+            return self._error_result(request, exc)
+
+    async def awrap_tool_call(self, request: ToolCallRequest, handler):
+        try:
+            return await handler(request)
+        except Exception as exc:  # noqa: BLE001 - this is the tool error boundary
+            return self._error_result(request, exc)
 
     def __call__(self, request, handler):
         """Functional interface used by unit tests."""

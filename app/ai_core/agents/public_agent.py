@@ -112,7 +112,7 @@ def _enabled_specialists(tenant: TenantConfig) -> tuple[str, ...]:
     return enabled
 
 
-def build_public_agent(tenant: TenantConfig):
+async def build_public_agent(tenant: TenantConfig):
     """Build the stateful public swarm and its specialist agent nodes."""
     enabled = _enabled_specialists(tenant)
     router_graph = build_router_graph(tenant)
@@ -124,9 +124,9 @@ def build_public_agent(tenant: TenantConfig):
         for name in enabled
     }
     fallback = enabled[0]
-    checkpointer_ctx, checkpointer = open_checkpointer()
+    checkpointer_ctx, checkpointer = await open_checkpointer()
 
-    def initial_router(state: PublicSwarmState) -> Command:
+    async def initial_router(state: PublicSwarmState) -> Command:
         recent_messages = [
             normalized
             for normalized in (
@@ -135,7 +135,7 @@ def build_public_agent(tenant: TenantConfig):
             )
             if normalized is not None
         ]
-        routed = router_graph.invoke({"messages": recent_messages})
+        routed = await router_graph.ainvoke({"messages": recent_messages})
         target = _INTENT_TO_SPECIALIST.get(routed["selected_specialist"], fallback)
         if target not in specialists:
             logger.info(
@@ -174,7 +174,7 @@ def build_public_agent(tenant: TenantConfig):
     return agent
 
 
-def run_public_agent_turn(
+async def run_public_agent_turn(
     agent,
     tenant: TenantConfig,
     thread_id: str,
@@ -198,7 +198,7 @@ def run_public_agent_turn(
         role="public",
         run_name=run_name,
     ):
-        result = agent.invoke(
+        result = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message, id=message_id)]},
             config=invocation_config(thread_id, run_name),
         )
@@ -224,7 +224,7 @@ def run_public_agent_turn(
 
     try:
         tokens, tools_called = _extract_usage(turn_messages)
-        trace_turn(
+        await trace_turn(
             tenant=tenant,
             thread_id=thread_id,
             role="public",

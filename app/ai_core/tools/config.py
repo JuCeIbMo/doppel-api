@@ -12,7 +12,7 @@ async def update_config(ctx: ToolContext, requested_changes: str = "") -> dict:
     if ctx.role != "admin":
         raise PermissionError("update_config requires admin role")
 
-    config = load_tenant_config(ctx.tenant.tenant_id)
+    config = await load_tenant_config(ctx.tenant.tenant_id)
     return {
         "current_config": config.model_dump(),
         "requested_changes": requested_changes,

@@ -10,17 +10,17 @@ from app.ai_core.config.tenant import AdminAgentConfig, PublicAgentConfig, Tenan
 from app.services.supabase_client import get_supabase
 
 
-def load_tenant_config(tenant_id: str) -> TenantConfig:
+async def load_tenant_config(tenant_id: str) -> TenantConfig:
     supabase = get_supabase()
 
     biz = (
-        supabase.table("business_info").select("name")
+        await supabase.table("business_info").select("name")
         .eq("tenant_id", tenant_id).limit(1).execute()
     ).data
     business_name = biz[0]["name"] if biz and biz[0].get("name") else "este negocio"
 
     cfg = (
-        supabase.table("bot_configs").select("admin_phones")
+        await supabase.table("bot_configs").select("admin_phones")
         .eq("tenant_id", tenant_id).single().execute()
     ).data or {}
     admin_phones = cfg.get("admin_phones") or []

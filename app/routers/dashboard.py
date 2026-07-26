@@ -42,7 +42,7 @@ async def get_whatsapp_accounts(tenant: dict = Depends(get_current_tenant)):
     # read a stale row and wrongly show "not connected". Newest first so the live
     # account always leads the list.
     result = (
-        get_supabase()
+        await get_supabase()
         .table("whatsapp_accounts")
         .select("id, waba_id, phone_number_id, display_phone, status, created_at")
         .eq("tenant_id", tenant["id"])
@@ -56,7 +56,7 @@ async def get_whatsapp_accounts(tenant: dict = Depends(get_current_tenant)):
 @router.get("/bot-config", response_model=BotConfigResponse)
 async def get_bot_config(tenant: dict = Depends(get_current_tenant)):
     result = (
-        get_supabase()
+        await get_supabase()
         .table("bot_configs")
         .select("id, system_prompt, welcome_message, language, bot_enabled")
         .eq("tenant_id", tenant["id"])
@@ -79,7 +79,7 @@ async def update_bot_config(
 
     supabase = get_supabase()
     result = (
-        supabase.table("bot_configs")
+        await supabase.table("bot_configs")
         .update(update_data)
         .eq("tenant_id", tenant["id"])
         .execute()
@@ -93,7 +93,7 @@ async def update_bot_config(
 async def get_admin_phones(tenant: dict = Depends(get_current_tenant)):
     """List the operator's admin WhatsApp numbers for this tenant."""
     result = (
-        get_supabase()
+        await get_supabase()
         .table("bot_configs")
         .select("admin_phones")
         .eq("tenant_id", tenant["id"])
@@ -123,7 +123,7 @@ async def update_admin_phones(
 
     supabase = get_supabase()
     result = (
-        supabase.table("bot_configs")
+        await supabase.table("bot_configs")
         .update({"admin_phones": cleaned, "bot_enabled": bool(cleaned)})
         .eq("tenant_id", tenant["id"])
         .execute()
@@ -144,7 +144,7 @@ async def get_messages(
     tenant_id = tenant["id"]
 
     count_result = (
-        supabase.table("messages")
+        await supabase.table("messages")
         .select("id", count="exact")
         .eq("tenant_id", tenant_id)
         .execute()
@@ -152,7 +152,7 @@ async def get_messages(
     total = count_result.count or 0
 
     data_result = (
-        supabase.table("messages")
+        await supabase.table("messages")
         .select("id, user_phone, direction, content, message_type, created_at")
         .eq("tenant_id", tenant_id)
         .order("created_at", desc=True)
@@ -168,7 +168,7 @@ async def get_messages(
 async def disconnect_whatsapp(request: Request, tenant: dict = Depends(get_current_tenant)):
     supabase = get_supabase()
     connected = (
-        supabase.table("whatsapp_accounts")
+        await supabase.table("whatsapp_accounts")
         .select("id, waba_id, access_token_encrypted")
         .eq("tenant_id", tenant["id"])
         .eq("status", "connected")
@@ -184,7 +184,7 @@ async def disconnect_whatsapp(request: Request, tenant: dict = Depends(get_curre
 
     for waba_id in waba_ids:
         active_waba_accounts = (
-            supabase.table("whatsapp_accounts")
+            await supabase.table("whatsapp_accounts")
             .select("id, tenant_id, access_token_encrypted")
             .eq("waba_id", waba_id)
             .eq("status", "connected")
@@ -223,14 +223,14 @@ async def disconnect_whatsapp(request: Request, tenant: dict = Depends(get_curre
                 tenant["id"],
             )
 
-    supabase.table("whatsapp_accounts").update({
+    await supabase.table("whatsapp_accounts").update({
         "status": "disconnected",
         "webhook_active": False,
         "access_token_encrypted": "",
         "deleted_at": disconnected_at,
     }).eq("tenant_id", tenant["id"]).eq("status", "connected").execute()
 
-    supabase.table("bot_configs").update({
+    await supabase.table("bot_configs").update({
         "bot_enabled": False,
     }).eq("tenant_id", tenant["id"]).execute()
 
@@ -272,7 +272,7 @@ async def get_business_info(tenant: dict = Depends(get_current_tenant)):
     """Return the tenant's business profile, autocreating an empty row if none exists."""
     supabase = get_supabase()
     existing = (
-        supabase.table("business_info")
+        await supabase.table("business_info")
         .select(_BUSINESS_FIELDS)
         .eq("tenant_id", tenant["id"])
         .limit(1)
@@ -282,7 +282,7 @@ async def get_business_info(tenant: dict = Depends(get_current_tenant)):
         return _serialize_business(existing.data[0])
 
     created = (
-        supabase.table("business_info")
+        await supabase.table("business_info")
         .insert({"tenant_id": tenant["id"]})
         .execute()
     )
@@ -303,7 +303,7 @@ async def update_business_info(
     supabase = get_supabase()
 
     existing = (
-        supabase.table("business_info")
+        await supabase.table("business_info")
         .select("id")
         .eq("tenant_id", tenant["id"])
         .limit(1)
@@ -312,7 +312,7 @@ async def update_business_info(
     if existing.data:
         if not update_data:
             current = (
-                supabase.table("business_info")
+                await supabase.table("business_info")
                 .select(_BUSINESS_FIELDS)
                 .eq("tenant_id", tenant["id"])
                 .single()
@@ -320,14 +320,14 @@ async def update_business_info(
             )
             return _serialize_business(current.data)
         result = (
-            supabase.table("business_info")
+            await supabase.table("business_info")
             .update(update_data)
             .eq("tenant_id", tenant["id"])
             .execute()
         )
     else:
         payload = {"tenant_id": tenant["id"], **update_data}
-        result = supabase.table("business_info").insert(payload).execute()
+        result = await supabase.table("business_info").insert(payload).execute()
 
     if not result.data:
         raise HTTPException(
@@ -341,7 +341,7 @@ async def update_business_info(
 @router.get("/products", response_model=list[ProductResponse])
 async def list_products(tenant: dict = Depends(get_current_tenant)):
     result = (
-        get_supabase()
+        await get_supabase()
         .table("products")
         .select("id, name, description, price, available, created_at")
         .eq("tenant_id", tenant["id"])
@@ -365,7 +365,7 @@ async def create_product(
     }
     if not payload["name"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El nombre es obligatorio.")
-    result = get_supabase().table("products").insert(payload).execute()
+    result = await get_supabase().table("products").insert(payload).execute()
     if not result.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -391,7 +391,7 @@ async def update_product(
 
     supabase = get_supabase()
     result = (
-        supabase.table("products")
+        await supabase.table("products")
         .update(update_data)
         .eq("id", product_id)
         .eq("tenant_id", tenant["id"])
@@ -409,7 +409,7 @@ async def delete_product(
 ):
     supabase = get_supabase()
     result = (
-        supabase.table("products")
+        await supabase.table("products")
         .delete()
         .eq("id", product_id)
         .eq("tenant_id", tenant["id"])
@@ -424,7 +424,7 @@ async def delete_product(
 async def delete_account(tenant: dict = Depends(get_current_tenant)):
     supabase = get_supabase()
 
-    supabase.table("tenants").delete().eq("id", tenant["id"]).execute()
+    await supabase.table("tenants").delete().eq("id", tenant["id"]).execute()
     logger.info("Account deleted for tenant_id=%s", tenant["id"])
     return DeleteAccountResponse(
         success=True,

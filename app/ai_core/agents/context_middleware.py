@@ -6,20 +6,38 @@ from app.ai_core.tools.context import ToolContext
 
 
 class MessageWindowMiddleware(AgentMiddleware):
-    """Bound model context while the parent graph keeps full durable history."""
+    """Bound model context while the parent graph keeps full durable history.
+
+    This caps the size of each model call's prompt; it is NOT a loop breaker.
+    Runaway tool loops are stopped by `MAX_TOOL_CALLS_PER_RUN` /
+    `MAX_CATALOG_SEARCHES_PER_RUN` in `subagents/_base.py`, with
+    `GRAPH_RECURSION_LIMIT` as the backstop behind them.
+    """
 
     def __init__(self, max_messages: int = 40):
         self.max_messages = max_messages
 
-    def wrap_model_call(self, request, handler):
+    def _trim(self, request):
         messages = trim_messages(
             request.messages,
             max_tokens=self.max_messages,
             token_counter=len,
             strategy="last",
             start_on="human",
+            # Without this, `strategy="last"` drops the system prompt as soon as
+            # the history outgrows the window: the specialist silently loses its
+            # instructions and the business name mid-conversation, and starts
+            # answering like a generic chatbot. Pinning it costs one slot of
+            # history and leaves the window itself unchanged.
+            include_system=True,
         )
-        return handler(request.override(messages=messages))
+        return request.override(messages=messages)
+
+    def wrap_model_call(self, request, handler):
+        return handler(self._trim(request))
+
+    async def awrap_model_call(self, request, handler):
+        return await handler(self._trim(request))
 
 
 class ToolContextMiddleware(AgentMiddleware):
@@ -42,30 +60,44 @@ class ToolContextMiddleware(AgentMiddleware):
         self.tenant = tenant
         self.role = role
 
-    def wrap_tool_call(self, request: ToolCallRequest, handler):
+    def _inject(self, request: ToolCallRequest):
+        """Return (injected?, original_args) after adding ctx to the call args."""
         tool = request.tool
         original_args = request.tool_call.get("args", {})
-        if tool is not None and _tool_accepts_ctx(tool):
-            thread_id = request.runtime.config.get("configurable", {}).get(
-                "thread_id", ""
-            )
-            # Inject ctx into a copy of the args so the original tool_call stored in
-            # the assistant message is not polluted with a non-JSON-serializable object.
-            request.tool_call["args"] = {
-                **original_args,
-                "ctx": ToolContext(
-                    tenant=self.tenant,
-                    role=self.role,
-                    thread_id=thread_id,
-                ),
-            }
+        if tool is None or not _tool_accepts_ctx(tool):
+            return False, original_args
+        thread_id = request.runtime.config.get("configurable", {}).get("thread_id", "")
+        # Inject ctx into a copy of the args so the original tool_call stored in
+        # the assistant message is not polluted with a non-JSON-serializable object.
+        request.tool_call["args"] = {
+            **original_args,
+            "ctx": ToolContext(
+                tenant=self.tenant,
+                role=self.role,
+                thread_id=thread_id,
+            ),
+        }
+        return True, original_args
+
+    def _restore(self, request: ToolCallRequest, injected: bool, original_args) -> None:
+        # Restore the original args (without ctx) so subsequent model calls can
+        # serialize the tool_call history without exposing the injected context.
+        if injected:
+            request.tool_call["args"] = original_args
+
+    def wrap_tool_call(self, request: ToolCallRequest, handler):
+        injected, original_args = self._inject(request)
         try:
             return handler(request)
         finally:
-            # Restore the original args (without ctx) so subsequent model calls can
-            # serialize the tool_call history without exposing the injected context.
-            if tool is not None and _tool_accepts_ctx(tool):
-                request.tool_call["args"] = original_args
+            self._restore(request, injected, original_args)
+
+    async def awrap_tool_call(self, request: ToolCallRequest, handler):
+        injected, original_args = self._inject(request)
+        try:
+            return await handler(request)
+        finally:
+            self._restore(request, injected, original_args)
 
 
 def _tool_accepts_ctx(tool) -> bool:

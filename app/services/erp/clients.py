@@ -26,18 +26,18 @@ class ClientsService:
             q = q.or_(f"name.ilike.%{search}%,phone.ilike.%{search}%")
         if tag:
             q = q.contains("tags", [tag])
-        return (q.range(offset, offset + limit - 1).execute()).data or []
+        return (await q.range(offset, offset + limit - 1).execute()).data or []
 
     async def get(self, ctx: ERPContext, client_id: str) -> dict:
         rows = (
-            get_supabase().table("clients").select(_FIELDS)
+            await get_supabase().table("clients").select(_FIELDS)
             .eq("tenant_id", ctx.tenant_id).eq("id", client_id).limit(1).execute()
         ).data
         if not rows:
             raise NotFound("Cliente no encontrado", client_id=client_id)
         client = rows[0]
         client["recent_sales"] = (
-            get_supabase().table("sales").select("id, total, status, created_at")
+            await get_supabase().table("sales").select("id, total, status, created_at")
             .eq("tenant_id", ctx.tenant_id).eq("client_id", client_id)
             .order("created_at", desc=True).limit(10).execute()
         ).data or []
@@ -45,7 +45,7 @@ class ClientsService:
 
     async def get_by_phone(self, ctx: ERPContext, phone: str) -> dict:
         rows = (
-            get_supabase().table("clients").select(_FIELDS)
+            await get_supabase().table("clients").select(_FIELDS)
             .eq("tenant_id", ctx.tenant_id).eq("phone", phone).limit(1).execute()
         ).data
         if not rows:
@@ -54,7 +54,7 @@ class ClientsService:
 
     async def get_by_whatsapp(self, ctx: ERPContext, wa_id: str) -> dict:
         rows = (
-            get_supabase().table("clients").select(_FIELDS)
+            await get_supabase().table("clients").select(_FIELDS)
             .eq("tenant_id", ctx.tenant_id).eq("whatsapp_id", wa_id).limit(1).execute()
         ).data
         if not rows:
@@ -63,19 +63,19 @@ class ClientsService:
 
     async def create(self, ctx: ERPContext, data: dict[str, Any]) -> dict:
         payload = {**data, "tenant_id": ctx.tenant_id}
-        row = (get_supabase().table("clients").insert(payload).execute()).data[0]
-        log_activity(ctx, action="client.created", module="clients",
+        row = (await get_supabase().table("clients").insert(payload).execute()).data[0]
+        await log_activity(ctx, action="client.created", module="clients",
                      detail={"client_id": row["id"], "name": row["name"]})
         return row
 
     async def update(self, ctx: ERPContext, client_id: str, data: dict[str, Any]) -> dict:
         clean = {k: v for k, v in data.items() if v is not None}
         rows = (
-            get_supabase().table("clients").update(clean)
+            await get_supabase().table("clients").update(clean)
             .eq("tenant_id", ctx.tenant_id).eq("id", client_id).execute()
         ).data
         if not rows:
             raise NotFound("Cliente no encontrado", client_id=client_id)
-        log_activity(ctx, action="client.updated", module="clients",
+        await log_activity(ctx, action="client.updated", module="clients",
                      detail={"client_id": client_id, "changed": list(clean.keys())})
         return rows[0]

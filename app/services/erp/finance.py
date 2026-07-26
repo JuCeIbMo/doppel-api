@@ -41,7 +41,7 @@ class FinanceService:
             q = q.gte("date", date_from)
         if date_to:
             q = q.lte("date", date_to)
-        return (q.range(offset, offset + limit - 1).execute()).data or []
+        return (await q.range(offset, offset + limit - 1).execute()).data or []
 
     async def create_transaction(self, ctx: ERPContext, data: dict[str, Any]) -> dict:
         payload = {
@@ -50,28 +50,28 @@ class FinanceService:
             "amount": data["amount"],
             "category": data["category"],
             "description": data.get("description"),
-            "cash_account_id": data.get("cash_account_id") or self._default_account_id(ctx),
+            "cash_account_id": data.get("cash_account_id") or await self._default_account_id(ctx),
             "actor": ctx.actor,
         }
         if data.get("date"):
             payload["date"] = data["date"].isoformat() if isinstance(data["date"], date) else data["date"]
-        row = (get_supabase().table("transactions").insert(payload).execute()).data[0]
-        log_activity(ctx, action=f"transaction.{data['type']}", module="finance",
+        row = (await get_supabase().table("transactions").insert(payload).execute()).data[0]
+        await log_activity(ctx, action=f"transaction.{data['type']}", module="finance",
                      detail={"amount": data["amount"], "category": data["category"]})
         return row
 
     async def categories(self, ctx: ERPContext) -> list[str]:
         rows = (
-            get_supabase().table("transactions").select("category")
+            await get_supabase().table("transactions").select("category")
             .eq("tenant_id", ctx.tenant_id).execute()
         ).data or []
         used = {r["category"] for r in rows if r.get("category")}
         return sorted(used | set(EXPENSE_CATEGORIES))
 
     # --- accounts ---
-    def _default_account_id(self, ctx: ERPContext) -> str | None:
+    async def _default_account_id(self, ctx: ERPContext) -> str | None:
         rows = (
-            get_supabase().table("cash_accounts").select("id")
+            await get_supabase().table("cash_accounts").select("id")
             .eq("tenant_id", ctx.tenant_id).eq("is_active", True)
             .order("is_default", desc=True).limit(1).execute()
         ).data
@@ -79,36 +79,36 @@ class FinanceService:
 
     async def list_accounts(self, ctx: ERPContext) -> list[dict]:
         return (
-            get_supabase().table("cash_accounts")
+            await get_supabase().table("cash_accounts")
             .select("id, name, type, balance, is_default, is_active")
             .eq("tenant_id", ctx.tenant_id).order("created_at").execute()
         ).data or []
 
     async def create_account(self, ctx: ERPContext, data: dict[str, Any]) -> dict:
         if data.get("is_default"):
-            self._clear_default(ctx)
+            await self._clear_default(ctx)
         payload = {**data, "tenant_id": ctx.tenant_id}
-        row = (get_supabase().table("cash_accounts").insert(payload).execute()).data[0]
-        log_activity(ctx, action="account.created", module="finance",
+        row = (await get_supabase().table("cash_accounts").insert(payload).execute()).data[0]
+        await log_activity(ctx, action="account.created", module="finance",
                      detail={"account_id": row["id"], "name": row["name"]})
         return row
 
     async def update_account(self, ctx: ERPContext, account_id: str, data: dict[str, Any]) -> dict:
         clean = {k: v for k, v in data.items() if v is not None}
         if clean.get("is_default"):
-            self._clear_default(ctx)
+            await self._clear_default(ctx)
         rows = (
-            get_supabase().table("cash_accounts").update(clean)
+            await get_supabase().table("cash_accounts").update(clean)
             .eq("tenant_id", ctx.tenant_id).eq("id", account_id).execute()
         ).data
         if not rows:
             raise NotFound("Caja no encontrada", account_id=account_id)
         return rows[0]
 
-    def _clear_default(self, ctx: ERPContext) -> None:
+    async def _clear_default(self, ctx: ERPContext) -> None:
         # Only one default per tenant (enforced by a partial unique index); unset the old one first.
         (
-            get_supabase().table("cash_accounts").update({"is_default": False})
+            await get_supabase().table("cash_accounts").update({"is_default": False})
             .eq("tenant_id", ctx.tenant_id).eq("is_default", True).execute()
         )
 
@@ -116,7 +116,7 @@ class FinanceService:
     async def cashflow(self, ctx: ERPContext, *, date_from: str, date_to: str,
                        group_by: str = "day") -> dict:
         rows = (
-            get_supabase().table("transactions").select("type, amount, date")
+            await get_supabase().table("transactions").select("type, amount, date")
             .eq("tenant_id", ctx.tenant_id).gte("date", date_from).lte("date", date_to)
             .execute()
         ).data or []

@@ -56,7 +56,7 @@ class ExportService:
                           date_to: str | None) -> tuple[str, list[str], list[list]]:
         f, t = default_period(date_from, date_to)
         rows = (
-            get_supabase().table("sales")
+            await get_supabase().table("sales")
             .select("id, status, payment_method, subtotal, discount, total, actor, created_at")
             .eq("tenant_id", ctx.tenant_id).gte("created_at", f).lte("created_at", f"{t}T23:59:59")
             .order("created_at", desc=True).execute()
@@ -139,7 +139,7 @@ class ExportService:
         from barcode.writer import ImageWriter
 
         rows = (
-            get_supabase().table("products").select("id, name, sku, barcode, price")
+            await get_supabase().table("products").select("id, name, sku, barcode, price")
             .eq("tenant_id", ctx.tenant_id).eq("id", product_id).limit(1).execute()
         ).data
         if not rows:

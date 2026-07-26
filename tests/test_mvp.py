@@ -6,7 +6,7 @@ os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
 os.environ.setdefault("SUPABASE_URL", "http://localhost")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
 os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("AGNO_DB_URL", "postgresql+psycopg://ai:ai@localhost:5532/ai")
+os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import hashlib
 import hmac
@@ -93,7 +93,7 @@ class FakeTableQuery:
         self._delete_mode = True
         return self
 
-    def execute(self):
+    async def execute(self):
         table = self.store.setdefault(self.table_name, [])
 
         if self._insert_payload is not None:
@@ -150,8 +150,8 @@ class StrictFilteredMutation:
         self.query.eq(key, value)
         return self
 
-    def execute(self):
-        return self.query.execute()
+    async def execute(self):
+        return await self.query.execute()
 
 
 class StrictMutationQuery(FakeTableQuery):
@@ -185,7 +185,10 @@ class MVPApiTests(unittest.TestCase):
 
     def test_refresh_token_endpoint_returns_new_session(self):
         fake_session = SimpleNamespace(access_token="new-access", refresh_token="new-refresh", expires_in=3600)
-        fake_auth = SimpleNamespace(refresh_session=lambda token: SimpleNamespace(session=fake_session))
+        async def _refresh_session(token):
+            return SimpleNamespace(session=fake_session)
+
+        fake_auth = SimpleNamespace(refresh_session=_refresh_session)
         fake_supabase = SimpleNamespace(auth=fake_auth)
 
         with patch("app.routers.auth.get_supabase_auth", return_value=fake_supabase):

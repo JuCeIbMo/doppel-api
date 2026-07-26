@@ -52,13 +52,13 @@ def bot_context(tenant_id: str, *, actor: Actor = "admin_bot", label: str | None
     )
 
 
-def log_activity(ctx: ERPContext, *, action: str, module: str, detail: dict) -> None:
-    """Append to the audit log. Best-effort and synchronous: the Supabase client is
-    sync, so we do NOT wrap it in asyncio.create_task. It never raises — a failed log
-    must not break the operation that triggered it.
+async def log_activity(ctx: ERPContext, *, action: str, module: str, detail: dict) -> None:
+    """Append to the audit log. Best-effort: it never raises — a failed log must not
+    break the operation that triggered it. Awaited inline rather than fired off with
+    asyncio.create_task so the write is ordered with the operation it records.
     """
     try:
-        get_supabase().table("activity_log").insert(
+        await get_supabase().table("activity_log").insert(
             {
                 "tenant_id": ctx.tenant_id,
                 "actor": ctx.actor,

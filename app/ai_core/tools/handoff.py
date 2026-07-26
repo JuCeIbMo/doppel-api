@@ -9,7 +9,7 @@ async def human_handoff(reason: str, ctx: ToolContext) -> HandoffResult:
     if ctx.role != "public":
         raise PermissionError("human_handoff requires public role")
 
-    log_activity(
+    await log_activity(
         bot_context(ctx.tenant.tenant_id, actor="whatsapp_bot"),
         action="handoff.requested", module="ai", detail={"reason": reason, "thread_id": ctx.thread_id},
     )

@@ -8,7 +8,7 @@ os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
 os.environ.setdefault("SUPABASE_URL", "http://localhost")
 os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
 os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("AGNO_DB_URL", "postgresql+psycopg://ai:ai@localhost:5532/ai")
+os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,17 +23,20 @@ def client(monkeypatch):
     app.dependency_overrides[get_erp_context] = lambda: ERPContext(
         tenant_id="t1", actor="owner", actor_label="Dueño"
     )
-    monkeypatch.setattr("app.routers.erp.products.log_activity", lambda *a, **k: None)
+    async def _noop_log(*a, **k):
+        return None
+
+    monkeypatch.setattr("app.routers.erp.products.log_activity", _noop_log)
     yield TestClient(app)
     app.dependency_overrides.clear()
 
 
 def _patch_pipeline(monkeypatch, *, analysis):
     monkeypatch.setattr("app.routers.erp.products.optimize_image", lambda raw: b"webp")
-    monkeypatch.setattr(
-        "app.routers.erp.products.upload_product_image",
-        lambda tenant_id, data: "https://cdn.test/t1/abc.webp",
-    )
+    async def _upload(tenant_id, data):
+        return "https://cdn.test/t1/abc.webp"
+
+    monkeypatch.setattr("app.routers.erp.products.upload_product_image", _upload)
     monkeypatch.setattr(
         "app.routers.erp.products.analyze_product_image",
         lambda data, content_type: analysis,

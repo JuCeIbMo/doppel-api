@@ -3,20 +3,21 @@
 from typing import Any
 
 
-def _close_agent(agent: Any) -> None:
+async def _close_agent(agent: Any) -> None:
     """Exit any context manager the agent holds for its checkpointer connection."""
     checkpointer_ctx = getattr(agent, "_checkpointer_ctx", None)
     if checkpointer_ctx is not None:
-        checkpointer_ctx.__exit__(None, None, None)
+        await checkpointer_ctx.__aexit__(None, None, None)
         agent._checkpointer_ctx = None
 
 
 def attach_lifecycle(agent: Any) -> Any:
-    """Attach a ``close()`` method to an agent for explicit resource cleanup.
+    """Attach an ``aclose()`` coroutine to an agent for explicit resource cleanup.
 
     ``create_agent`` and compiled StateGraphs need explicit checkpointer
     connection cleanup, so this helper adds a small hook that releases it
-    instead of leaking the context manager.
+    instead of leaking the context manager. It is a coroutine because the
+    checkpointer is an ``AsyncPostgresSaver``, an async context manager.
     """
-    agent.close = lambda: _close_agent(agent)
+    agent.aclose = lambda: _close_agent(agent)
     return agent

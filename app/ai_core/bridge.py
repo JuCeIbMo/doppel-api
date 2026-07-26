@@ -15,8 +15,8 @@ todavía (ver TODO abajo) — conocido, no oculto.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import threading
 
 from app.ai_core.agents.admin_agent import build_admin_agent, run_admin_agent_turn
 from app.ai_core.agents.public_agent import build_public_agent, run_public_agent_turn
@@ -27,7 +27,7 @@ from app.ai_core.media.transcription import transcribe_audio_media
 logger = logging.getLogger("doppel.ai_core.bridge")
 
 _agents: dict[tuple[str, str], object] = {}
-_agents_lock = threading.Lock()
+_agents_lock = asyncio.Lock()
 
 
 def _document_note(media: list[dict] | None) -> str:
@@ -40,7 +40,7 @@ def _image_note(media: list[dict] | None) -> str:
     return "\n[el cliente envió una imagen; hoy no puedo verla, pedile que describa lo que busca]" if images else ""
 
 
-def _get_or_build_agent(tenant: TenantConfig, role: str):
+async def _get_or_build_agent(tenant: TenantConfig, role: str):
     """Cache the compiled agent per (tenant_id, role). Built lazily on first use.
 
     TODO: no cache invalidation on tenant config changes yet (the ported
@@ -49,10 +49,14 @@ def _get_or_build_agent(tenant: TenantConfig, role: str):
     to reach a running process without a restart).
     """
     key = (tenant.tenant_id, role)
-    with _agents_lock:
+    async with _agents_lock:
         agent = _agents.get(key)
         if agent is None:
-            agent = build_admin_agent(tenant) if role == "admin" else build_public_agent(tenant)
+            agent = (
+                await build_admin_agent(tenant)
+                if role == "admin"
+                else await build_public_agent(tenant)
+            )
             _agents[key] = agent
         return agent
 
@@ -71,7 +75,7 @@ async def respond(
         tenant_id, user_phone, media_types, len(content or ""),
     )
     try:
-        tenant = load_tenant_config(tenant_id)
+        tenant = await load_tenant_config(tenant_id)
         role = resolve_role(user_phone, tenant)
         thread_id = f"{tenant_id}:{role}:{user_phone}"
 
@@ -87,9 +91,9 @@ async def respond(
             tenant_id, role, text[:120],
         )
 
-        agent = _get_or_build_agent(tenant, role)
+        agent = await _get_or_build_agent(tenant, role)
         run_turn = run_admin_agent_turn if role == "admin" else run_public_agent_turn
-        result = run_turn(agent, tenant, thread_id, text)
+        result = await run_turn(agent, tenant, thread_id, text)
 
         messages = result.get("messages", [])
         last = messages[-1] if messages else None

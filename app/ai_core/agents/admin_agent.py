@@ -51,11 +51,11 @@ _INPUT_TOO_LONG_RESPONSE = (
 _EMPTY_INPUT_RESPONSE = "Mensaje vacío. / Empty message."
 
 
-def build_admin_agent(tenant: TenantConfig):
+async def build_admin_agent(tenant: TenantConfig):
     system_prompt = load_prompt(tenant, "admin", "admin_agent")
     tools = allowed_tools_for(tenant, "admin", _ADMIN_DEFAULT_TOOLS)
     model = build_chat_model("admin", temperature=0.3)
-    checkpointer_ctx, checkpointer = open_checkpointer()
+    checkpointer_ctx, checkpointer = await open_checkpointer()
 
     agent = create_agent(
         name="admin_agent",
@@ -73,7 +73,7 @@ def build_admin_agent(tenant: TenantConfig):
     return agent
 
 
-def run_admin_agent_turn(
+async def run_admin_agent_turn(
     agent,
     tenant: TenantConfig,
     thread_id: str,
@@ -101,7 +101,7 @@ def run_admin_agent_turn(
         role="admin",
         run_name=run_name,
     ):
-        result = agent.invoke(
+        result = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message, id=message_id)]},
             config=invocation_config(thread_id, run_name),
         )
@@ -125,7 +125,7 @@ def run_admin_agent_turn(
     )
 
     try:
-        trace_turn(
+        await trace_turn(
             tenant=tenant,
             thread_id=thread_id,
             role="admin",

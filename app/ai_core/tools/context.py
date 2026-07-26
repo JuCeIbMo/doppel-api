@@ -1,3 +1,4 @@
+import inspect
 from dataclasses import dataclass
 
 from langchain.tools import tool
@@ -25,8 +26,14 @@ def contextual_tool(func):
     inject it), but ``ctx`` is omitted from the JSON schema sent to the LLM.
     This keeps the context object out of the model's tool-calling surface while
     still making it available to business logic.
+
+    Every business tool in this package is an ``async def``, so it must be passed
+    to ``from_function`` as ``coroutine=``, never as ``func=``: LangChain treats
+    ``func`` as synchronous and would hand the model an un-awaited coroutine
+    object instead of the tool's result.
     """
     base_tool = tool(func)
+    is_async = inspect.iscoroutinefunction(func)
 
     class ContextualTool(StructuredTool):
         def get_input_schema(self, config=None):
@@ -40,15 +47,20 @@ def contextual_tool(func):
             return create_model(f"{self.name}_llm", **fields, __base__=BaseModel)
 
         def __call__(self, *args, **kwargs):
-            """Allow the tool to be invoked like a plain function in tests."""
+            """Allow the tool to be invoked like a plain function in tests.
+
+            For an async tool this returns the ``ainvoke`` coroutine, so callers
+            await it exactly as they would await the undecorated function.
+            """
             tool_input = {}
             for name, value in zip(self.args_schema.model_fields.keys(), args):
                 tool_input[name] = value
             tool_input.update(kwargs)
-            return self.invoke(tool_input)
+            return self.ainvoke(tool_input) if is_async else self.invoke(tool_input)
 
     return ContextualTool.from_function(
-        func=func,
+        func=None if is_async else func,
+        coroutine=func if is_async else None,
         name=base_tool.name,
         description=base_tool.description,
         args_schema=base_tool.args_schema,

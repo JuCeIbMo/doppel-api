@@ -27,9 +27,9 @@ async def _run_smb_sync(phone_number_id: str, access_token: str) -> None:
                 logger.exception("SMB sync failed: phone=%s type=%s", phone_number_id, sync_type)
 
 
-def _update_account_status(supabase, tenant_id: str, waba_id: str, phone_number_id: str, status: str) -> None:
+async def _update_account_status(supabase, tenant_id: str, waba_id: str, phone_number_id: str, status: str) -> None:
     try:
-        supabase.table("whatsapp_accounts").update({"status": status}).eq(
+        await supabase.table("whatsapp_accounts").update({"status": status}).eq(
             "tenant_id", tenant_id
         ).eq("waba_id", waba_id).eq("phone_number_id", phone_number_id).execute()
     except Exception:
@@ -54,7 +54,7 @@ async def oauth_exchange(
     )
 
     # Existing tenant check (we will create lazily below if absent)
-    existing_tenant = supabase.table("tenants").select("id").eq("user_id", user_id).execute()
+    existing_tenant = await supabase.table("tenants").select("id").eq("user_id", user_id).execute()
 
     # --- 1. Exchange code for access token ---
     try:
@@ -123,7 +123,7 @@ async def oauth_exchange(
 
             # Block if user already has a DIFFERENT number fully connected.
             connected = (
-                supabase.table("whatsapp_accounts")
+                await supabase.table("whatsapp_accounts")
                 .select("id, waba_id, phone_number_id")
                 .eq("tenant_id", tenant_id)
                 .eq("status", "connected")
@@ -136,20 +136,20 @@ async def oauth_exchange(
             if conflicting:
                 raise HTTPException(status_code=409, detail="Ya tienes un WhatsApp activo conectado.")
         else:
-            tenant_result = supabase.table("tenants").insert({
+            tenant_result = await supabase.table("tenants").insert({
                 "business_name": business_name,
                 "user_id": user_id,
                 "email": current_user.email,
             }).execute()
             tenant_id = tenant_result.data[0]["id"]
-            supabase.table("bot_configs").insert({
+            await supabase.table("bot_configs").insert({
                 "tenant_id": tenant_id,
                 "bot_enabled": False,
                 "admin_phones": [],
             }).execute()
             logger.info("tenant created: id=%s name=%s", tenant_id, business_name)
 
-        supabase.table("whatsapp_accounts").upsert({
+        await supabase.table("whatsapp_accounts").upsert({
             "tenant_id": tenant_id,
             "waba_id": data.waba_id,
             "phone_number_id": phone_number_id,
@@ -183,7 +183,7 @@ async def oauth_exchange(
     else:
         logger.info("step 6/7 skipped (coexistence)")
 
-    _update_account_status(supabase, tenant_id, data.waba_id, phone_number_id, "meta_registered")
+    await _update_account_status(supabase, tenant_id, data.waba_id, phone_number_id, "meta_registered")
 
     # --- 7. Subscribe app to WABA webhooks ---
     try:
@@ -213,7 +213,7 @@ async def oauth_exchange(
 
     # Mark as fully connected
     try:
-        supabase.table("whatsapp_accounts").update({
+        await supabase.table("whatsapp_accounts").update({
             "status": "connected",
             "webhook_active": True,
         }).eq("tenant_id", tenant_id).eq("waba_id", data.waba_id).eq(
@@ -230,7 +230,7 @@ async def oauth_exchange(
         background_tasks.add_task(_run_smb_sync, phone_number_id, access_token)
 
     config_result = (
-        supabase.table("bot_configs")
+        await supabase.table("bot_configs")
         .select("admin_phones")
         .eq("tenant_id", tenant_id)
         .single()

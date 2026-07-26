@@ -63,7 +63,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
                 # Find active tenant account by phone_number_id (ignore disconnected accounts)
                 result = (
-                    supabase.table("whatsapp_accounts")
+                    await supabase.table("whatsapp_accounts")
                     .select("id, tenant_id")
                     .eq("phone_number_id", phone_number_id)
                     .eq("status", "connected")
@@ -79,7 +79,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     continue
 
                 config_result = (
-                    supabase.table("bot_configs")
+                    await supabase.table("bot_configs")
                     .select("admin_phones, bot_enabled")
                     .eq("tenant_id", account["tenant_id"])
                     .single()
@@ -93,7 +93,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     wa_message_id = msg.get("id")
                     if wa_message_id:
                         existing_message = (
-                            supabase.table("messages")
+                            await supabase.table("messages")
                             .select("id")
                             .eq("wa_message_id", wa_message_id)
                             .limit(1)
@@ -108,7 +108,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                     user_phone = normalize_phone(msg.get("from")) or msg.get("from")
                     mode = "manager" if user_phone in admin_phones else "client"
 
-                    supabase.table("messages").insert({
+                    await supabase.table("messages").insert({
                         "tenant_id": account["tenant_id"],
                         "wa_account_id": account["id"],
                         "user_phone": user_phone,
@@ -262,7 +262,7 @@ async def _process_bot_response(
         # system_prompt/manager_prompt/ai_model ya no aplican — app.ai_core usa
         # prompts estáticos (app/ai_core/prompts/) y DeepSeek fijo, no bot_configs.
         config_result = (
-            supabase.table("bot_configs")
+            await supabase.table("bot_configs")
             .select("bot_enabled, admin_phones")
             .eq("tenant_id", tenant_id)
             .single()
@@ -287,7 +287,7 @@ async def _process_bot_response(
 
         # Get WhatsApp account (need phone_number_id and encrypted token)
         wa_result = (
-            supabase.table("whatsapp_accounts")
+            await supabase.table("whatsapp_accounts")
             .select("phone_number_id, access_token_encrypted")
             .eq("id", wa_account_id)
             .eq("status", "connected")
@@ -345,7 +345,7 @@ async def _process_bot_response(
         )
 
         # Save outbound message
-        supabase.table("messages").insert({
+        await supabase.table("messages").insert({
             "tenant_id": tenant_id,
             "wa_account_id": wa_account_id,
             "user_phone": user_phone,

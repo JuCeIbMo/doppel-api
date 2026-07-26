@@ -12,20 +12,20 @@ from app.services.erp.exceptions import InsufficientStock, ValidationError
 from app.services.supabase_client import get_supabase
 
 
-def _current_stock(tenant_id: str, product_id: str, variant_id: str | None) -> float:
+async def _current_stock(tenant_id: str, product_id: str, variant_id: str | None) -> float:
     q = (
         get_supabase().table("inventory").select("quantity")
         .eq("tenant_id", tenant_id).eq("product_id", product_id)
     )
     q = q.is_("variant_id", "null") if variant_id is None else q.eq("variant_id", variant_id)
-    rows = q.limit(1).execute().data
+    rows = (await q.limit(1).execute()).data
     return float(rows[0]["quantity"]) if rows else 0.0
 
 
 class InventoryService:
     async def list_stock(self, ctx: ERPContext, *, limit: int = 200, offset: int = 0) -> list[dict]:
         rows = (
-            get_supabase().table("inventory")
+            await get_supabase().table("inventory")
             .select("product_id, variant_id, quantity, products(name, category, unit, low_stock_threshold)")
             .eq("tenant_id", ctx.tenant_id).range(offset, offset + limit - 1).execute()
         ).data or []
@@ -56,7 +56,7 @@ class InventoryService:
         )
         if product_id:
             q = q.eq("product_id", product_id)
-        rows = (q.range(offset, offset + limit - 1).execute()).data or []
+        rows = (await q.range(offset, offset + limit - 1).execute()).data or []
         for r in rows:
             r["product_name"] = (r.pop("products", None) or {}).get("name")
         return rows
@@ -71,7 +71,7 @@ class InventoryService:
         if (new_quantity is None) == (delta is None):
             raise ValidationError("Indica exactamente uno: new_quantity o delta")
 
-        current = _current_stock(ctx.tenant_id, product_id, variant_id)
+        current = await _current_stock(ctx.tenant_id, product_id, variant_id)
         move_type, move_qty = _resolve_adjustment(product_id, current, new_quantity, delta)
 
         if move_qty == 0:
@@ -86,13 +86,13 @@ class InventoryService:
             "notes": note,
             "actor": ctx.actor,
         }
-        get_supabase().table("inventory_movements").insert(movement).execute()
-        log_activity(ctx, action="stock.adjusted", module="inventory",
+        await get_supabase().table("inventory_movements").insert(movement).execute()
+        await log_activity(ctx, action="stock.adjusted", module="inventory",
                      detail={"product_id": product_id, "type": move_type, "quantity": move_qty, "note": note})
         return {
             "ok": True,
             "product_id": product_id,
-            "quantity": _current_stock(ctx.tenant_id, product_id, variant_id),
+            "quantity": await _current_stock(ctx.tenant_id, product_id, variant_id),
             "movement": {"type": move_type, "quantity": move_qty},
         }
 

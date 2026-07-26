@@ -41,12 +41,12 @@ class ActivityService:
             q = q.gte("created_at", date_from)
         if date_to:
             q = q.lte("created_at", f"{date_to}T23:59:59")
-        rows = (q.range(offset, offset + limit - 1).execute()).data or []
+        rows = (await q.range(offset, offset + limit - 1).execute()).data or []
         return [_enrich(r) for r in rows]
 
     async def ai_feed(self, ctx: ERPContext, *, limit: int = 50, offset: int = 0) -> list[dict]:
         rows = (
-            get_supabase().table("activity_log").select("*")
+            await get_supabase().table("activity_log").select("*")
             .eq("tenant_id", ctx.tenant_id).in_("actor", list(_BOT_ACTORS))
             .order("created_at", desc=True).range(offset, offset + limit - 1).execute()
         ).data or []

@@ -21,7 +21,7 @@ _BIZ_BLANK = {"name": "", "description": "", "hours": "", "address": "", "paymen
 async def business_info(ctx: ERPContext) -> dict:
     """Perfil del negocio para inyectar al prompt (no es una tool)."""
     result = (
-        get_supabase().table("business_info").select(_BIZ_FIELDS)
+        await get_supabase().table("business_info").select(_BIZ_FIELDS)
         .eq("tenant_id", ctx.tenant_id).limit(1).execute()
     )
     return result.data[0] if result.data else dict(_BIZ_BLANK)
