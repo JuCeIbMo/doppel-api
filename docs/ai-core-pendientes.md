@@ -8,18 +8,18 @@ Ordenado por riesgo real, no por esfuerzo.
 
 ---
 
-## 🟡 El router clasifica una sola vez por conversación
+## ⛔ El router clasifica una sola vez — DECIDIDO, NO TOCAR
 
 **Dónde:** `app/ai_core/agents/public_agent.py:route_from_start`
 
-`active_agent` vive en el checkpoint, así que el router LLM corre en el **primer
-mensaje y nunca más**. Quien saluda con "hola" queda pegado al `greeter` de por
-vida salvo que el propio modelo acierte a llamar un handoff.
+`active_agent` vive en el checkpoint, así que el router LLM corre en el primer
+mensaje y nunca más. La derivación posterior queda en manos de los handoffs que
+llaman los propios especialistas.
 
-La salud de todo el swarm depende de que cuatro prompts nunca se olviden de
-derivar. Está documentado como intencional, pero es frágil.
-
-**Fix posible:** re-rutear cuando el turno no produjo ni tool calls ni handoff.
+**Esto es intencional y está decidido.** Costó trabajo llegar acá. No cambiar
+`route_from_start` para que el router corra en cada turno: ya se intentó
+(2026-07-26) y se revirtió. Si alguna vez se reabre, tiene que ser una decisión
+explícita del dueño del proyecto, no un "arreglo" incidental durante otra tarea.
 
 ---
 
