@@ -47,10 +47,16 @@ class Settings(BaseSettings):
     # Bucket de Supabase Storage donde se suben las imágenes optimizadas de productos.
     PRODUCT_IMAGES_BUCKET: str = "product-images"
 
-    # Empty value disables agent responses; any non-empty value enables the bot.
-    AI_CORE_URL: str = Field(
+    # Interruptor del bot: cualquier valor no vacío lo activa, vacío lo apaga sin
+    # tocar código. `AI_CORE_URL` y `NANOBOT_RUNTIME_URL` son los nombres
+    # históricos de cuando el agente era un servicio HTTP aparte — hoy corre
+    # in-process y esto no es una URL de nada. Se mantienen como alias para no
+    # romper los deploys que ya los tienen seteados.
+    BOT_ENABLED: str = Field(
         default="",
-        validation_alias=AliasChoices("AI_CORE_URL", "NANOBOT_RUNTIME_URL"),
+        validation_alias=AliasChoices(
+            "BOT_ENABLED", "AI_CORE_URL", "NANOBOT_RUNTIME_URL"
+        ),
     )
 
     @field_validator("ALLOWED_ORIGINS", mode="before")

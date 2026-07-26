@@ -125,7 +125,7 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
                         user_phone, phone_number_id, msg_type,
                     )
 
-                    should_process = bool(settings.AI_CORE_URL and (content or media))
+                    should_process = bool(settings.BOT_ENABLED and (content or media))
                     if mode == "client" and not config.get("bot_enabled", True):
                         should_process = False
 

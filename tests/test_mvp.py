@@ -444,7 +444,7 @@ class MVPApiTests(unittest.TestCase):
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
-            patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
+            patch("app.routers.webhook.settings.BOT_ENABLED", "http://ai-core"),
             patch("app.routers.webhook.ai_respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-1")),
@@ -524,7 +524,7 @@ class MVPApiTests(unittest.TestCase):
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
-            patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
+            patch("app.routers.webhook.settings.BOT_ENABLED", "http://ai-core"),
             patch("app.routers.webhook.ai_respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.send_whatsapp_message", AsyncMock(return_value="out-2")),
@@ -604,7 +604,7 @@ class MVPApiTests(unittest.TestCase):
         with (
             patch("app.routers.webhook.get_supabase", return_value=fake_supabase),
             patch("app.routers.webhook.verify_webhook_signature", return_value=True),
-            patch("app.routers.webhook.settings.AI_CORE_URL", "http://ai-core"),
+            patch("app.routers.webhook.settings.BOT_ENABLED", "http://ai-core"),
             patch("app.routers.webhook.ai_respond", ai_core_response),
             patch("app.routers.webhook.decrypt_token", return_value="token"),
             patch("app.routers.webhook.meta_api.download_media_to_path", download_media),

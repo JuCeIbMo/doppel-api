@@ -56,7 +56,7 @@ async def get_pool() -> AsyncConnectionPool:
     """Return the process-wide pool, opening it on first use.
 
     Opened lazily rather than at startup so a deployment with the bot disabled
-    (`AI_CORE_URL` empty) never needs `CHAT_DB_URL` to boot.
+    (`BOT_ENABLED` empty) never needs `CHAT_DB_URL` to boot.
     """
     global _pool
     async with _pool_lock:

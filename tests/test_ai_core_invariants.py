@@ -216,6 +216,39 @@ def test_same_thread_turns_do_not_overlap(monkeypatch):
     assert bridge._thread_locks == {}, "lock dict leaked an entry"
 
 
+def test_bot_switch_still_accepts_the_historical_env_names(monkeypatch):
+    """Renaming the switch must not silently disable the bot on live deploys.
+
+    `AI_CORE_URL` dates from when the agent was a separate HTTP service. It is
+    now `BOT_ENABLED`, but a deployment still setting the old name has to keep
+    working — otherwise the rename turns the bot off without any error.
+    """
+    from app.config import Settings
+
+    required = {
+        "META_APP_ID": "x",
+        "META_APP_SECRET": "x",
+        "META_VERIFY_TOKEN": "x",
+        "SUPABASE_URL": "http://localhost",
+        "SUPABASE_SERVICE_KEY": "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y",
+        "ENCRYPTION_KEY": "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=",
+    }
+    for name in ("BOT_ENABLED", "AI_CORE_URL", "NANOBOT_RUNTIME_URL"):
+        monkeypatch.delenv(name, raising=False)
+    for key, value in required.items():
+        monkeypatch.setenv(key, value)
+
+    # No switch set at all -> bot off.
+    assert Settings(_env_file=None).BOT_ENABLED == ""
+
+    for legacy in ("BOT_ENABLED", "AI_CORE_URL", "NANOBOT_RUNTIME_URL"):
+        monkeypatch.setenv(legacy, "enabled")
+        assert Settings(_env_file=None).BOT_ENABLED == "enabled", (
+            f"{legacy} no longer enables the bot"
+        )
+        monkeypatch.delenv(legacy)
+
+
 def test_different_threads_still_run_concurrently(monkeypatch):
     """The lock must be per conversation, not a global bottleneck."""
     active = 0
