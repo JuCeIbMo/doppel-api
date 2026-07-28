@@ -31,8 +31,6 @@ from pathlib import Path
 import pytest
 
 from app.ai_core.agents.admin_agent import _ADMIN_DEFAULT_TOOLS
-from app.ai_core.agents.handoffs import build_handoff_tools
-from app.ai_core.config.tenant import ALL_PUBLIC_SUBAGENTS
 
 PROMPTS_DIR = Path("app/ai_core/prompts")
 
@@ -64,10 +62,8 @@ def _tools_named_in(text: str) -> set[str]:
 def _available_to(agent: str) -> set[str]:
     if agent == "admin_agent":
         return {tool.name for tool in _ADMIN_DEFAULT_TOOLS}
-    handoffs = {
-        tool.name for tool in build_handoff_tools(agent, list(ALL_PUBLIC_SUBAGENTS))
-    }
-    return _PUBLIC_BUSINESS_TOOLS[agent] | handoffs
+    # Specialists bind business tools only: there is no handoff between them.
+    return _PUBLIC_BUSINESS_TOOLS[agent]
 
 
 def _prompt_cases():

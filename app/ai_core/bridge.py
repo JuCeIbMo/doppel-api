@@ -103,8 +103,8 @@ async def _thread_lock(thread_id: str):
     A customer sending two messages in a row fires two background tasks that
     run the graph against the same checkpoint at once: both read the same
     state, both write, and the second write wins — so one message effectively
-    never happened, and the swarm's `active_agent` can end up on whichever
-    turn finished last. Queue them instead.
+    never happened and its half of the conversation history is lost. Queue them
+    instead.
 
     Refcounted so the dict does not grow one entry per conversation forever.
     """

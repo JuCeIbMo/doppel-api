@@ -3,21 +3,17 @@ import time
 import uuid
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langgraph.graph import START, MessagesState, StateGraph
+from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import Command
 
 from app.ai_core.agents.guardrails import (
     InputTooLongError,
     sanitize_user_input,
 )
-from app.ai_core.agents.handoffs import (
-    build_handoff_tools,
-    handoff_targets,
-)
 from app.ai_core.agents.llm import resolve_model_name
 from app.ai_core.channel.outbox import TurnRuntime
-from app.ai_core.agents.router import build_router_graph
+from app.ai_core.agents.router import classify_intent
 from app.ai_core.config.tenant import TenantConfig
 from app.ai_core.observability.langfuse import (
     invocation_config,
@@ -48,8 +44,6 @@ _SPECIALIST_BUILDERS = {
     "closer": build_closer,
 }
 
-ROUTER_CONTEXT_MESSAGES = 10
-
 _INPUT_TOO_LONG_RESPONSE = (
     "Lo siento, tu mensaje es demasiado largo. ¿Puedes resumirlo? / "
     "Sorry, your message is too long. Can you shorten it?"
@@ -58,22 +52,20 @@ _EMPTY_INPUT_RESPONSE = "No recibí tu mensaje, ¿puedes repetirlo? / I didn't g
 
 
 class PublicSwarmState(MessagesState):
-    """Shared, checkpointed state for the public specialist swarm."""
+    """Checkpointed state for the public turn graph.
+
+    ``active_agent`` is never control flow. The router re-classifies on every
+    turn instead of resuming the last active specialist, and ``active_agent``
+    serves two other purposes: it biases the next turn's classification towards
+    continuity (``router._continuity_prompt``) and it is what ``trace_turn``
+    records as the turn's specialist. ``intent``/``confidence`` are the router's
+    raw output for the current turn; ``intent`` is ``None`` when classification
+    failed, which ``route_dispatch`` reads as "keep the previous specialist".
+    """
 
     active_agent: str | None
-
-
-def _message_to_router_dict(message: BaseMessage | dict) -> dict | None:
-    """Keep only conversational messages relevant to initial intent routing."""
-    if isinstance(message, BaseMessage):
-        role = message.type
-        content = message.content
-    else:
-        role = message.get("role") or message.get("type")
-        content = message.get("content", "")
-    if role == "tool":
-        return None
-    return {"role": role, "content": content}
+    intent: str | None
+    confidence: float | None
 
 
 def _sum_tokens(usage: dict) -> int:
@@ -113,30 +105,30 @@ def _enabled_specialists(tenant: TenantConfig) -> tuple[str, ...]:
 
 
 async def build_public_agent(tenant: TenantConfig):
-    """Build the stateful public swarm and its specialist agent nodes."""
+    """Build the public turn graph: the router dispatches fresh on every turn.
+
+    ``START -> classify_intent -> route_dispatch -> <specialist> -> END``. There
+    is no sticky routing and no handoff between specialists: a specialist cannot
+    jump to another one, so the ping-pong that had no safety net once the router
+    stopped running is structurally impossible. If the specialist needs to
+    change, the next turn's router call handles it -- biased towards continuity
+    by the previous ``active_agent``.
+    """
     enabled = _enabled_specialists(tenant)
-    router_graph = build_router_graph(tenant)
-    specialists = {
-        name: _SPECIALIST_BUILDERS[name](
-            tenant,
-            build_handoff_tools(name, enabled),
-        )
-        for name in enabled
-    }
+    router_node = classify_intent(tenant)
+    specialists = {name: _SPECIALIST_BUILDERS[name](tenant) for name in enabled}
     fallback = enabled[0]
     checkpointer = await open_checkpointer()
 
-    async def initial_router(state: PublicSwarmState) -> Command:
-        recent_messages = [
-            normalized
-            for normalized in (
-                _message_to_router_dict(message)
-                for message in state["messages"][-ROUTER_CONTEXT_MESSAGES:]
-            )
-            if normalized is not None
-        ]
-        routed = await router_graph.ainvoke({"messages": recent_messages})
-        target = _INTENT_TO_SPECIALIST.get(routed["selected_specialist"], fallback)
+    def route_dispatch(state: PublicSwarmState) -> Command:
+        intent = state.get("intent")
+        if intent is None:
+            # Classification failed after its retries: continuity beats silence.
+            target = state.get("active_agent") or fallback
+        else:
+            target = _INTENT_TO_SPECIALIST.get(intent, fallback)
+        # Also catches an `active_agent` checkpointed before the tenant disabled
+        # that specialist.
         if target not in specialists:
             logger.info(
                 "Router selected disabled specialist '%s'; using '%s'",
@@ -146,27 +138,14 @@ async def build_public_agent(tenant: TenantConfig):
             target = fallback
         return Command(update={"active_agent": target}, goto=target)
 
-    def route_from_start(state: PublicSwarmState) -> str:
-        active = state.get("active_agent")
-        return active if active in specialists else "initial_router"
-
     builder = StateGraph(PublicSwarmState, context_schema=TurnRuntime)
-    builder.add_node(
-        "initial_router",
-        initial_router,
-        destinations=tuple(specialists),
-    )
+    builder.add_node("classify_intent", router_node)
+    builder.add_node("route_dispatch", route_dispatch, destinations=tuple(specialists))
     for name, specialist in specialists.items():
-        builder.add_node(
-            name,
-            specialist,
-            destinations=handoff_targets(name, enabled),
-        )
-    builder.add_conditional_edges(
-        START,
-        route_from_start,
-        path_map=["initial_router", *enabled],
-    )
+        builder.add_node(name, specialist)
+        builder.add_edge(name, END)
+    builder.add_edge(START, "classify_intent")
+    builder.add_edge("classify_intent", "route_dispatch")
 
     return builder.compile(checkpointer=checkpointer)
 
@@ -178,7 +157,7 @@ async def run_public_agent_turn(
     user_message: str,
     message_id: str | None = None,
 ) -> dict[str, Any]:
-    """Run one public turn; the checkpoint resumes the last active specialist.
+    """Run one public turn; the router picks the specialist, the checkpoint the history.
 
     ``message_id`` is the inbound WhatsApp message id when the caller has one. It
     doubles as this turn's identity for tool idempotency (see `invocation_config`),

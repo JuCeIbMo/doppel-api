@@ -1,5 +1,4 @@
 from langchain.agents import create_agent
-from langchain.tools import BaseTool
 
 from app.ai_core.agents.llm import build_chat_model
 from app.ai_core.config.tenant import TenantConfig
@@ -11,8 +10,7 @@ from app.ai_core.subagents._base import (
 from app.ai_core.tools import check_stock, search_catalog, send_image, send_reply_buttons
 
 
-def build_objection(tenant: TenantConfig, handoff_tools: list[BaseTool] | None = None):
-    handoffs = handoff_tools or []
+def build_objection(tenant: TenantConfig):
     business_tools = allowed_tools_for(
         tenant,
         "public",
@@ -22,10 +20,6 @@ def build_objection(tenant: TenantConfig, handoff_tools: list[BaseTool] | None =
         name="objection",
         model=build_chat_model("public", temperature=0.7),
         system_prompt=load_prompt(tenant, "public", "objection"),
-        tools=[*business_tools, *handoffs],
-        middleware=specialist_middleware(
-            tenant,
-            "public",
-            {tool.name for tool in handoffs},
-        ),
+        tools=business_tools,
+        middleware=specialist_middleware(tenant, "public"),
     )

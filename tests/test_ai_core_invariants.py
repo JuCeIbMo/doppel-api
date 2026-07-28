@@ -117,8 +117,8 @@ def test_catalog_search_cap_is_tighter_than_the_general_cap():
 
 
 def test_closer_worst_case_still_fits():
-    """search_catalog + check_stock + create_order + a handoff."""
-    assert MAX_TOOL_CALLS_PER_RUN >= 4
+    """search_catalog + check_stock + create_order."""
+    assert MAX_TOOL_CALLS_PER_RUN >= 3
 
 
 # --------------------------------------------------------------------------

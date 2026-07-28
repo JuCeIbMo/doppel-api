@@ -1,5 +1,4 @@
 from langchain.agents import create_agent
-from langchain.tools import BaseTool
 
 from app.ai_core.agents.llm import build_chat_model
 from app.ai_core.config.tenant import TenantConfig
@@ -17,8 +16,7 @@ from app.ai_core.tools import (
 )
 
 
-def build_catalog(tenant: TenantConfig, handoff_tools: list[BaseTool] | None = None):
-    handoffs = handoff_tools or []
+def build_catalog(tenant: TenantConfig):
     business_tools = allowed_tools_for(
         tenant,
         "public",
@@ -28,10 +26,6 @@ def build_catalog(tenant: TenantConfig, handoff_tools: list[BaseTool] | None = N
         name="catalog",
         model=build_chat_model("public", temperature=0.7),
         system_prompt=load_prompt(tenant, "public", "catalog"),
-        tools=[*business_tools, *handoffs],
-        middleware=specialist_middleware(
-            tenant,
-            "public",
-            {tool.name for tool in handoffs},
-        ),
+        tools=business_tools,
+        middleware=specialist_middleware(tenant, "public"),
     )

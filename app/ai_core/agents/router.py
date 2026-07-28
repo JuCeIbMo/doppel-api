@@ -1,12 +1,23 @@
+import logging
 from textwrap import dedent
 from typing import Literal
 from pydantic import BaseModel, Field
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
-from langgraph.graph import StateGraph, START, END
-from langgraph.types import Command, RetryPolicy
+from langchain_core.messages import SystemMessage, ToolMessage
 from app.ai_core.agents.llm import build_chat_model
-from app.ai_core.agents.state import RouterState
 from app.ai_core.config.tenant import TenantConfig
+
+logger = logging.getLogger(__name__)
+
+# How many recent turn messages the classifier sees. Kept small: intent
+# classification needs recent context, not the full history.
+ROUTER_CONTEXT_MESSAGES = 10
+
+# Transient provider errors (rate limits, network) are retried here rather than
+# with a graph-level RetryPolicy: the node has to survive a final failure and
+# fall back to the previous specialist, and a RetryPolicy can only re-run a node
+# that raises -- an exception that escapes kills the whole turn.
+ROUTER_MAX_ATTEMPTS = 3
+
 
 class IntentClassification(BaseModel):
     intent: Literal["greeting", "catalog", "objection", "close"] = Field(
@@ -80,54 +91,69 @@ def _classifier_prompt(tenant: TenantConfig) -> str:
     )
 
 
-def _message_to_langchain(msg):
-    """Normalize a message dict or BaseMessage into a LangChain message for the router."""
-    if isinstance(msg, BaseMessage):
-        return msg
-    role = msg.get("role") or msg.get("type")
-    content = msg.get("content", "")
-    if role in ("assistant", "ai"):
-        return AIMessage(content=content)
-    if role == "tool":
-        return ToolMessage(content=str(content), tool_call_id=msg.get("tool_call_id", ""))
-    return HumanMessage(content=content)
+def _continuity_prompt(active_agent: str) -> str:
+    """Bias the classifier towards the specialist already handling the thread.
+
+    The router runs on every turn, so without this a mid-checkout aside ("and in
+    red?") reclassifies as `catalog` and drops the customer out of the close.
+    This is a bias, not a lock: a clear change of need still moves the turn.
+    """
+    return dedent(
+        f"""\
+        The specialist currently handling this conversation is {active_agent}.
+        Keep it unless the customer's message clearly asks for something else.
+        Continuing an in-flight conversation is worth more than reclassifying on a
+        stray word: a request for a detail in the middle of a checkout is still close,
+        and a follow-up question while resolving a concern is still objection.
+        """
+    )
 
 
-def build_router_graph(tenant: TenantConfig):
+def classify_intent(tenant: TenantConfig):
+    """Build the router node: classifies the next specialist for the current turn.
+
+    Returned as a plain node function (matching the ``build_X(tenant) -> node``
+    shape used for specialists) so it can be registered directly on the public
+    agent's graph, instead of a separately compiled sub-graph. That keeps the
+    intent classification call inside the same run as everything else, so it
+    inherits the parent's config -- callbacks (Langfuse), recursion budget,
+    thread_id -- instead of running as an untracked nested invocation.
+    """
     # Thinking is disabled centrally so DeepSeek accepts the specific
     # tool_choice used by function-calling structured output.
     model = build_chat_model("router", temperature=0).with_structured_output(
         IntentClassification, method="function_calling"
     )
+    system_prompt = _classifier_prompt(tenant)
 
-    async def classify_intent(state: RouterState):
-        system_prompt = _classifier_prompt(tenant)
-        messages = [SystemMessage(content=system_prompt)] + [
-            _message_to_langchain(msg) for msg in state["messages"]
+    async def node(state) -> dict:
+        recent_messages = [
+            message
+            for message in state["messages"][-ROUTER_CONTEXT_MESSAGES:]
+            if not isinstance(message, ToolMessage)
         ]
-        result = await model.ainvoke(messages)
-        return {
-            "intent": result.intent,
-            "confidence": result.confidence,
-        }
+        prompts = [SystemMessage(content=system_prompt)]
+        # `route_dispatch` has not run yet this turn, so this is still the
+        # specialist the previous turn settled on. Absent on a thread's first turn.
+        active_agent = state.get("active_agent")
+        if active_agent:
+            prompts.append(SystemMessage(content=_continuity_prompt(active_agent)))
 
-    def confidence_check(state: RouterState):
-        # Confidence is recorded for observability, not used to force a weak
-        # generic fallback. The classifier must select the closest specialist.
-        return {}
+        for attempt in range(1, ROUTER_MAX_ATTEMPTS + 1):
+            try:
+                result = await model.ainvoke(prompts + recent_messages)
+            except Exception:  # noqa: BLE001 - the turn must survive a dead classifier
+                if attempt < ROUTER_MAX_ATTEMPTS:
+                    continue
+                logger.exception(
+                    "Intent classification failed after %d attempts; "
+                    "falling back to the previous specialist",
+                    ROUTER_MAX_ATTEMPTS,
+                )
+                # `route_dispatch` reads this as "keep the previous specialist".
+                # Raising instead would fail the whole turn, and `bridge.respond`
+                # answers a failed turn with silence.
+                return {"intent": None, "confidence": None}
+            return {"intent": result.intent, "confidence": result.confidence}
 
-    def dispatch(state: RouterState) -> Command[Literal["__end__"]]:
-        return Command(update={"selected_specialist": state["intent"]}, goto=END)
-
-    builder = StateGraph(RouterState)
-    # Transient provider errors (rate limits, network) retry instead of
-    # failing the customer's turn.
-    builder.add_node("classify_intent", classify_intent, retry_policy=RetryPolicy(max_attempts=3))
-    builder.add_node("confidence_check", confidence_check)
-    builder.add_node("dispatch", dispatch)
-
-    builder.add_edge(START, "classify_intent")
-    builder.add_edge("classify_intent", "confidence_check")
-    builder.add_edge("confidence_check", "dispatch")
-
-    return builder.compile()
+    return node

@@ -14,18 +14,12 @@ class ToolGuardrailMiddleware(AgentMiddleware):
 
     tools = ()
 
-    def __init__(
-        self,
-        tenant: TenantConfig,
-        role: str,
-        extra_allowed_tools: set[str] | None = None,
-    ):
+    def __init__(self, tenant: TenantConfig, role: str):
         self.allowed = set(
             tenant.public_agent.allowed_tools
             if role == "public"
             else tenant.admin_agent.allowed_tools
         )
-        self.allowed.update(extra_allowed_tools or ())
         self.role = role
 
     def _error_message(self, tool_name: str) -> str:
@@ -91,12 +85,8 @@ class ToolErrorMiddleware(AgentMiddleware):
         return self.wrap_tool_call(request, handler)
 
 
-def build_tool_guardrail(
-    tenant: TenantConfig,
-    role: str,
-    extra_allowed_tools: set[str] | None = None,
-):
-    return ToolGuardrailMiddleware(tenant, role, extra_allowed_tools)
+def build_tool_guardrail(tenant: TenantConfig, role: str):
+    return ToolGuardrailMiddleware(tenant, role)
 
 
 def build_tool_error_boundary() -> ToolErrorMiddleware:

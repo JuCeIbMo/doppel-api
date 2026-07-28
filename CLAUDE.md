@@ -67,7 +67,7 @@ entrega al modelo un coroutine sin ejecutar, en silencio.
 **`app/services/storefront.py`** es la capa que expone el ERP al agente vendedor. Devuelve shapes "lean" (solo lo que la IA necesita) y evita que el bot toque los ERP services directamente.
 
 El rol lo resuelve `resolve_role(user_phone, tenant)` por el número del remitente (verificado por Meta), nunca por el texto del mensaje:
-- `public` → swarm de especialistas (greeter/catalog/objection/closer) + `create_order`
+- `public` → un router LLM clasifica **cada turno** y despacha a un especialista (greeter/catalog/objection/closer) + `create_order`. Grafo único `START → classify_intent → route_dispatch → <especialista> → END`: sin routing pegajoso y **sin handoffs entre especialistas** (un especialista no puede saltar a otro; si tiene que cambiar, lo decide el router del turno siguiente). El `active_agent` del turno anterior sesga la clasificación hacia la continuidad, no la fuerza. Ver `docs/ai-core-pendientes.md`.
 - `admin` → tools ERP completas (reportes, stock, alta de productos, config)
 
 ### Herramienta de imagen de producto (Gemini, separada del bot)

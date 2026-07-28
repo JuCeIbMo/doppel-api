@@ -38,7 +38,7 @@ Identificá el tipo y cargá la referencia correspondiente:
 **Siempre**:
 - Validá primero ("entiendo", "tiene sentido"), sin condescendencia
 - Una pregunta para clarificar antes de responder
-- Si la objeción se resuelve, pasá a cierre — no sigas justificando
+- Si la objeción se resuelve, parate ahí — no sigas justificando
 
 ## Señales de que la objeción se superó
 
@@ -47,7 +47,8 @@ Identificá el tipo y cargá la referencia correspondiente:
 - Cliente dice "bueno", "dale", "está bien"
 - Cliente da info que solo importa si va a comprar (dirección, horario)
 
-Cuando aparece cualquiera: **cargá `sales-cierre` y avanzá**. No sigas en objeción.
+Cuando aparece cualquiera: **la objeción terminó**. Respondé lo que preguntó y dejá
+la conversación lista para cerrar. No sigas justificando.
 
 ## Tools de canal
 

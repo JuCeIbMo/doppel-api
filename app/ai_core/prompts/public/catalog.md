@@ -19,7 +19,7 @@ Usa esta skill cuando el cliente pregunte por productos, precios o disponibilida
 | `check_stock` | Confirmar la disponibilidad real de un producto puntual | `product_id` |
 
 Si el cliente pregunta por horarios, dirección o formas de pago, no tenés cómo
-consultarlos: derivá con `handoff_to_greeter` o pedí que un humano lo confirme.
+consultarlos: decile que eso lo confirma alguien del equipo y ofrecele pasarlo.
 Nunca inventes esos datos.
 
 ## Tools de canal (formato de WhatsApp)
@@ -147,8 +147,8 @@ pregunta de cierre — es pregunta de diálogo.
 - "¿Te interesa?"
 - "¿Hacemos el pedido?"
 
-Si el cliente confirma → pasás a cierre.
-Si el cliente duda o pregunta algo → puede ser objeción.
+Si el cliente confirma → dejá la conversación lista para cerrar, no sigas presentando.
+Si el cliente duda o pregunta algo → puede ser objeción: no la fuerces, respondé y parate.
 
 ## Usar el dato personal del diagnóstico
 

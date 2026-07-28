@@ -8,21 +8,6 @@ Ordenado por riesgo real, no por esfuerzo.
 
 ---
 
-## ⛔ El router clasifica una sola vez — DECIDIDO, NO TOCAR
-
-**Dónde:** `app/ai_core/agents/public_agent.py:route_from_start`
-
-`active_agent` vive en el checkpoint, así que el router LLM corre en el primer
-mensaje y nunca más. La derivación posterior queda en manos de los handoffs que
-llaman los propios especialistas.
-
-**Esto es intencional y está decidido.** Costó trabajo llegar acá. No cambiar
-`route_from_start` para que el router corra en cada turno: ya se intentó
-(2026-07-26) y se revirtió. Si alguna vez se reabre, tiene que ser una decisión
-explícita del dueño del proyecto, no un "arreglo" incidental durante otra tarea.
-
----
-
 ## 🔵 Menores
 
 - **Sin soporte de imágenes** ni de tools interactivas de WhatsApp (botones,
@@ -34,6 +19,49 @@ explícita del dueño del proyecto, no un "arreglo" incidental durante otra tare
 
 ## Ya arreglado (no re-diagnosticar)
 
+- ✅ **El router clasificaba una sola vez, y los handoffs no tenían red de
+  seguridad.** Reabierto por decisión explícita del dueño del proyecto
+  (2026-07-28), reemplaza a la nota "⛔ DECIDIDO, NO TOCAR" que vivía arriba de
+  este archivo. El diseño viejo era: `active_agent` en el checkpoint,
+  `route_from_start` saltando desde `START` directo al especialista, y la
+  derivación posterior en manos de tools `handoff_to_*` que los especialistas se
+  llamaban entre sí con `Command(goto=..., graph=Command.PARENT)`. El problema
+  no era el ahorro de una llamada al clasificador: era que **nada cortaba un
+  ping-pong entre dos especialistas**. Los caps de `ToolCallLimitMiddleware`
+  acotan el loop *dentro* de un especialista; entre ellos el único freno era
+  `GRAPH_RECURSION_LIMIT`, y cuando salta `bridge.respond` devuelve `ok=False`,
+  el webhook no manda nada y el cliente queda **en silencio**, con Meta
+  recibiendo 200 y sin reintento.
+
+  Ahora el grafo es un solo `START -> classify_intent -> route_dispatch ->
+  <especialista> -> END`, con profundidad fija: el ping-pong es estructuralmente
+  imposible porque un especialista ya no puede saltar a otro. `handoffs.py` y
+  `state.py` se borraron. `active_agent` sigue en el checkpoint pero **no es
+  control de flujo**: alimenta el sesgo del router y el `subagent` de
+  `trace_turn`.
+
+  **Por qué esta versión no es la que se revirtió el 2026-07-26.** Aquel intento
+  hizo correr el router en cada turno *sin memoria del especialista anterior*, y
+  eso perdía la continuidad: un aside en medio de un cierre ("¿y en rojo?") se
+  reclasificaba como `catalog` y tiraba al cliente fuera del flujo. Acá el nodo
+  del router recibe el `active_agent` previo en un `SystemMessage` aparte
+  (`router._continuity_prompt`) con la instrucción de mantenerlo salvo señal
+  clara de cambio. Es sesgo, no candado: un cambio real de necesidad igual mueve
+  el turno.
+
+  Además, como el clasificador ahora corre en **todos** los turnos y no sólo en
+  el primero, un proveedor caído podía dejar cualquier mensaje sin respuesta. Por
+  eso el retry es explícito dentro del nodo (`ROUTER_MAX_ATTEMPTS`) y, agotado,
+  devuelve `intent=None`, que `route_dispatch` lee como "seguí con el
+  especialista anterior". Un `RetryPolicy` de grafo no servía: sólo re-corre un
+  nodo que lanza, y una excepción que escapa mata el turno entero.
+
+  Costo asumido: el clasificador pasa de 1 llamada por conversación a 1 por
+  turno (~500 tokens fijos + hasta 10 mensajes de contexto, y un round-trip
+  secuencial antes de que arranque el especialista). Cubierto por
+  `tests/test_public_routing.py`. **Regla que reemplaza a la vieja: no
+  reintroducir handoffs entre especialistas.** Si el especialista tiene que
+  cambiar, lo decide la llamada al router del turno siguiente.
 - ✅ **`create_order` sin idempotencia.** Un reintento del modelo con los mismos
   ítems registraba una **segunda venta**: descontaba stock de nuevo, sumaba de
   nuevo a caja y a los rollups del cliente. `migration_v10_sale_idempotency.sql`

@@ -43,23 +43,26 @@ Si el cliente dijo algo vago tipo "quiero ver" o "info sobre X":
 
 ## Cuándo salir de diagnóstico
 
-Pasás a presentación cuando:
+El diagnóstico está listo cuando:
 - Sabés qué necesita (uso, contexto, restricción principal)
 - Sabés qué problema resuelve (no qué producto quiere)
 - Tenés al menos un producto del catálogo que encaja
 
-**No pasás antes** aunque el cliente pregunte el precio. Si pregunta precio en
+Ahí dejás de preguntar y cerrás el turno confirmando lo que entendiste. La
+presentación viene después: no la arranques vos.
+
+**No cortés antes** aunque el cliente pregunte el precio. Si pregunta precio en
 medio del diagnóstico:
 > "Te lo paso ya — solo una cosa más para asegurarme de recomendarte bien.
 > [Pregunta diagnóstica]."
 
 ## Cuándo NO seguir diagnosticando
 
-Si ya hiciste 3-4 preguntas y el cliente respondió todo: parate. Pasá a presentación.
+Si ya hiciste 3-4 preguntas y el cliente respondió todo: parate.
 Seguir preguntando se vuelve interrogatorio.
 
 Si el cliente ya sabe exactamente qué quiere ("quiero el modelo X en talla M"):
-una sola pregunta de confirmación (ej: para qué uso) y pasás a presentación.
+una sola pregunta de confirmación (ej: para qué uso) y ahí cortás.
 
 ## Reglas del diagnóstico
 
@@ -68,4 +71,4 @@ una sola pregunta de confirmación (ej: para qué uso) y pasás a presentación.
 - Si el cliente menciona una mala experiencia previa, esa es la información más
   valiosa que vas a recibir — pregunta más sobre eso.
 - Si el cliente está apurado ("necesito algo ya"), acelerá: 1-2 preguntas
-  máximo y pasás a presentación.
+  máximo y cortás.

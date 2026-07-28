@@ -1,5 +1,4 @@
 from langchain.agents import create_agent
-from langchain.tools import BaseTool
 
 from app.ai_core.agents.llm import build_chat_model
 from app.ai_core.config.tenant import TenantConfig
@@ -18,8 +17,7 @@ from app.ai_core.tools import (
 )
 
 
-def build_closer(tenant: TenantConfig, handoff_tools: list[BaseTool] | None = None):
-    handoffs = handoff_tools or []
+def build_closer(tenant: TenantConfig):
     # `human_handoff` is the closer's escape hatch: payment problems and
     # non-standard requests surface here, at the moment of committing. It is in
     # ALL_PUBLIC_TOOLS and its prompt documents the escalation, but it was bound
@@ -36,10 +34,6 @@ def build_closer(tenant: TenantConfig, handoff_tools: list[BaseTool] | None = No
         name="closer",
         model=build_chat_model("public", temperature=0.3),
         system_prompt=load_prompt(tenant, "public", "closer"),
-        tools=[*business_tools, *handoffs],
-        middleware=specialist_middleware(
-            tenant,
-            "public",
-            {tool.name for tool in handoffs},
-        ),
+        tools=business_tools,
+        middleware=specialist_middleware(tenant, "public"),
     )

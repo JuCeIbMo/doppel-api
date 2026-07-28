@@ -49,7 +49,7 @@ def allowed_tools_for(tenant: TenantConfig, role: str, default_tools: list) -> l
 # a model that batches parallel calls can do far more work than it suggests.
 #
 # A legitimate turn needs 1-3 calls, and the closer's worst case
-# (search_catalog + check_stock + create_order + a handoff) is 4, so 5 leaves
+# (search_catalog + check_stock + create_order) is 3, so 5 leaves
 # room without letting a loop run. It also has to stay small enough that the
 # graph's recursion limit does not run out first: a specialist alternates
 # model -> tools and ends with one more model call to answer, so a run of N
@@ -61,15 +61,11 @@ MAX_TOOL_CALLS_PER_RUN = 5
 # Tighter cap on the one tool that loops in practice: a model that finds no
 # match rephrases the same search (bebidas, bebida, drink, refresco, ...)
 # instead of concluding the catalog has none. Only this tool gets blocked;
-# check_stock, create_order and the handoffs stay available.
+# check_stock and create_order stay available.
 MAX_CATALOG_SEARCHES_PER_RUN = 3
 
 
-def specialist_middleware(
-    tenant: TenantConfig,
-    role: str,
-    extra_allowed_tools: set[str] | None = None,
-) -> list:
+def specialist_middleware(tenant: TenantConfig, role: str) -> list:
     """Standard middleware stack for every specialist/admin agent.
 
     Order: the call limits are outermost so they bound the run regardless of
@@ -105,7 +101,7 @@ def specialist_middleware(
             exit_behavior="continue",
         ),
         build_tool_error_boundary(),
-        build_tool_guardrail(tenant, role, extra_allowed_tools),
+        build_tool_guardrail(tenant, role),
         build_tool_context(tenant, role),
         build_message_window(),
     ]
