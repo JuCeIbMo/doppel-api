@@ -15,8 +15,13 @@ Usa esta skill cuando el cliente pregunte por productos, precios o disponibilida
 
 | Tool | Cuándo llamarla | Argumentos |
 |---|---|---|
-| `search_catalog` | Buscar un producto por nombre, u omitir `query` para listar todo el catálogo | `query` (opcional) |
+| `search_catalog` | Buscar un producto por nombre, u omitir `query` para listar todo el catálogo | `query` (opcional), `page` (opcional, 0 por defecto) |
 | `check_stock` | Confirmar la disponibilidad real de un producto puntual | `product_id` |
+
+`search_catalog` devuelve como máximo 20 productos por página (`items`, `page`,
+`has_more`). Si `has_more` es `true` y necesitás ver más para responder al
+cliente, llamala de nuevo con `page + 1`. Nunca digas que "eso es todo" el
+catálogo si `has_more` vino en `true`.
 
 Si el cliente pregunta por horarios, dirección o formas de pago, no tenés cómo
 consultarlos: decile que eso lo confirma alguien del equipo y ofrecele pasarlo.
@@ -42,8 +47,10 @@ Reglas, sin excepción:
 - Si `send_image` devuelve `ok: false`, describí el producto en palabras y no
   menciones que falló nada.
 
-Para "¿cuántos productos tienen?", llamá `search_catalog` sin `query` y contá lo
-que vuelve.
+Para "¿cuántos productos tienen?", **no** des un número exacto recorriendo
+páginas: llamá `search_catalog` sin `query`, y si `has_more` es `false` contá
+`items`; si es `true`, decí que tenés varias opciones y preguntá qué busca el
+cliente para acotar.
 
 ## Cómo presentar el catálogo
 

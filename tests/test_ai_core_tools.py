@@ -90,15 +90,15 @@ def test_tool_returns_result_not_coroutine(monkeypatch):
     rows = [{"id": "p1", "name": "Agua", "price": 10.0, "in_stock": True,
              "description": "1L", "tags": ["bebida"]}]
 
-    async def fake_search(ctx, query=None):
-        return rows
+    async def fake_search(ctx, query=None, page=0):
+        return {"items": rows, "page": page, "has_more": False}
 
     monkeypatch.setattr(catalog_tools.storefront, "search_catalog", fake_search)
 
     result = asyncio.run(search_catalog.ainvoke({"query": "agua", "ctx": _ctx()}))
 
     assert not inspect.iscoroutine(result), "tool returned an un-awaited coroutine"
-    assert [p.model_dump()["name"] for p in result] == ["Agua"]
+    assert [p.model_dump()["name"] for p in result.items] == ["Agua"]
 
 
 def test_ctx_hidden_from_model_but_validated():

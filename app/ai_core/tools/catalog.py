@@ -10,7 +10,7 @@ from typing import Annotated
 from pydantic import Field
 
 from app.ai_core.tools.context import ToolContext, contextual_tool
-from app.ai_core.tools.models import ProductResult
+from app.ai_core.tools.models import CatalogPage, ProductResult
 from app.services import storefront
 from app.services.erp.context import bot_context
 from app.services.erp.products import ProductsService
@@ -22,19 +22,27 @@ def _erp_ctx(ctx: ToolContext):
 
 
 @contextual_tool
-async def search_catalog(query: str | None, ctx: ToolContext) -> list[ProductResult]:
-    """Search the product catalog by name. Omit `query` to list everything available."""
+async def search_catalog(query: str | None, ctx: ToolContext, page: int = 0) -> CatalogPage:
+    """Search the product catalog by name. Omit `query` to list everything available.
+
+    Results are paginated (10 per page). If the response has `has_more: true`,
+    call this again with `page` incremented by 1 to see more — do not assume
+    the first page is the whole catalog."""
     if ctx.role not in {"public", "admin"}:
         raise PermissionError("search_catalog requires public or admin role")
 
-    rows = await storefront.search_catalog(_erp_ctx(ctx), query)
-    return [
-        ProductResult(
-            id=r["id"], name=r["name"], description=r["description"],
-            price=r["price"], in_stock=r["in_stock"], tags=r["tags"],
-        )
-        for r in rows
-    ]
+    result = await storefront.search_catalog(_erp_ctx(ctx), query, page=page)
+    return CatalogPage(
+        items=[
+            ProductResult(
+                id=r["id"], name=r["name"], description=r["description"],
+                price=r["price"], in_stock=r["in_stock"], tags=r["tags"],
+            )
+            for r in result["items"]
+        ],
+        page=result["page"],
+        has_more=result["has_more"],
+    )
 
 
 @contextual_tool

@@ -10,6 +10,15 @@ class ProductResult(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class CatalogPage(BaseModel):
+    items: list[ProductResult]
+    page: int
+    # True = hay más productos; llamá search_catalog de nuevo con `page + 1`.
+    # Sin esto el modelo no tiene forma de distinguir "esto es todo" de "corté
+    # la página" y o inventa que no hay más, o repite la misma página.
+    has_more: bool
+
+
 class StockResult(BaseModel):
     product_id: str
     quantity: float

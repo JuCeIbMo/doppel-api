@@ -27,16 +27,31 @@ async def business_info(ctx: ERPContext) -> dict:
     return result.data[0] if result.data else dict(_BIZ_BLANK)
 
 
-async def search_catalog(ctx: ERPContext, query: str | None = None) -> list[dict]:
-    """Lista lean de productos disponibles. Incluye `id` como ancla para la venta y
-    `description`/`tags` para que el vendedor matchee la consulta del cliente."""
-    rows = await ProductsService().list(ctx, search=query, available=True, limit=50)
-    return [
+# Productos por página. Un catálogo grande devuelto entero en un solo turno es
+# la clase de "info innecesaria" que infla cada mensaje al modelo aunque el
+# cliente sólo pidió ver "qué tienen" — la IA repagina en vez de recibirlo todo.
+CATALOG_PAGE_SIZE = 20
+
+
+async def search_catalog(ctx: ERPContext, query: str | None = None, page: int = 0) -> dict:
+    """Página lean de productos disponibles. Incluye `id` como ancla para la venta y
+    `description`/`tags` para que el vendedor matchee la consulta del cliente.
+
+    Pide `page_size + 1` filas para saber si hay más sin una query de COUNT
+    aparte, y recorta la fila de sobra antes de devolver."""
+    offset = page * CATALOG_PAGE_SIZE
+    rows = await ProductsService().list(
+        ctx, search=query, available=True, limit=CATALOG_PAGE_SIZE + 1, offset=offset,
+    )
+    has_more = len(rows) > CATALOG_PAGE_SIZE
+    rows = rows[:CATALOG_PAGE_SIZE]
+    items = [
         {"id": r["id"], "name": r["name"], "price": r["price"],
          "in_stock": float(r.get("stock", 0)) > 0,
          "description": r.get("description") or "", "tags": r.get("tags") or []}
         for r in rows
     ]
+    return {"items": items, "page": page, "has_more": has_more}
 
 
 async def get_product_image(ctx: ERPContext, product_id: str) -> str | None:

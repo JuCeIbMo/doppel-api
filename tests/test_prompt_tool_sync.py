@@ -50,7 +50,9 @@ _PUBLIC_BUSINESS_TOOLS = {
 
 # A prompt may legitimately mention these in backticks without calling them:
 # tool arguments and response fields, not tools.
-_NOT_TOOLS = {"product_id", "query", "quantity", "date_from", "date_to", "reason"}
+_NOT_TOOLS = {
+    "product_id", "query", "quantity", "date_from", "date_to", "reason", "has_more",
+}
 
 
 def _tools_named_in(text: str) -> set[str]:

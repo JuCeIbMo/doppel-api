@@ -17,7 +17,7 @@ Usa esta skill cuando el administrador pregunte por ventas, stock, productos o l
 | Tool | Cuándo llamarla | Argumentos |
 |---|---|---|
 | `get_sales_report` | Resumen de ventas y facturación del mes en curso | — |
-| `search_catalog` | Buscar productos por nombre, u omitir `query` para listar todo | `query` (opcional) |
+| `search_catalog` | Buscar productos por nombre, u omitir `query` para listar todo | `query` (opcional), `page` (opcional, 0 por defecto) |
 | `check_stock` | Ver el stock de un producto puntual | `product_id` |
 | `add_product` | Dar de alta un producto nuevo | `name`, `price`, `description` (opc.), `category` (opc.) |
 | `update_stock` | Corregir el stock tras un conteo físico | `product_id`, `quantity` |
@@ -31,6 +31,10 @@ algo que no pudiste ejecutar.
 
 `check_stock` y `update_stock` necesitan un `product_id` real. Sacalo siempre de un
 `search_catalog` previo; nunca lo inventes ni lo adivines a partir del nombre.
+
+`search_catalog` devuelve 20 productos por página (`items`, `page`, `has_more`).
+Si `has_more` es `true` y no encontraste lo que buscabas, llamala de nuevo con
+`page + 1` en vez de asumir que no existe.
 
 ## Flujo para ajustar stock
 

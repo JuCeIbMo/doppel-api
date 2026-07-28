@@ -76,12 +76,36 @@ def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
     monkeypatch.setattr("app.services.storefront.ProductsService.list", fake_list)
     result = asyncio.run(storefront.search_catalog(CTX, query="a"))
     # Enriquecido con description+tags para que el vendedor matchee; faltantes -> "" / [].
-    assert result == [
-        {"id": "p1", "name": "Coca 500ml", "price": 1.2, "in_stock": True,
-         "description": "Gaseosa cola", "tags": ["bebida", "gaseosa"]},
-        {"id": "p2", "name": "Agua", "price": 0.8, "in_stock": False,
-         "description": "", "tags": []},
+    assert result == {
+        "items": [
+            {"id": "p1", "name": "Coca 500ml", "price": 1.2, "in_stock": True,
+             "description": "Gaseosa cola", "tags": ["bebida", "gaseosa"]},
+            {"id": "p2", "name": "Agua", "price": 0.8, "in_stock": False,
+             "description": "", "tags": []},
+        ],
+        "page": 0,
+        "has_more": False,
+    }
+
+
+def test_search_catalog_paginates(monkeypatch):
+    all_rows = [
+        {"id": f"p{i}", "name": f"Producto {i}", "price": 1.0, "available": True, "stock": 1}
+        for i in range(45)
     ]
+
+    async def fake_list(self, ctx, *, category=None, search=None, available=None, limit=50, offset=0):
+        return all_rows[offset:offset + limit]
+
+    monkeypatch.setattr("app.services.storefront.ProductsService.list", fake_list)
+
+    page0 = asyncio.run(storefront.search_catalog(CTX, page=0))
+    assert [p["id"] for p in page0["items"]] == [f"p{i}" for i in range(20)]
+    assert page0["has_more"] is True
+
+    page2 = asyncio.run(storefront.search_catalog(CTX, page=2))
+    assert [p["id"] for p in page2["items"]] == [f"p{i}" for i in range(40, 45)]
+    assert page2["has_more"] is False
 
 
 from app.services.erp.exceptions import ERPError, InsufficientStock, NotFound
