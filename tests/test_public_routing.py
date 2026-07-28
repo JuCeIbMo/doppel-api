@@ -36,7 +36,7 @@ import asyncio
 import pytest
 from langchain.agents import create_agent
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 
@@ -238,6 +238,37 @@ def test_router_prompt_carries_the_previous_specialist(monkeypatch):
 
     assert "currently handling" not in _system_texts(model.seen[0])
     assert "closer" in _system_texts(model.seen[1])
+
+
+def test_router_never_sends_an_unanswered_tool_call(monkeypatch):
+    """Un turno con tools no puede envenenar la clasificación del turno siguiente.
+
+    Filtrar sólo los `ToolMessage` dejaba huérfano al `AIMessage` que los pidió y
+    el proveedor devolvía 400 ("assistant message with 'tool_calls' must be
+    followed by tool messages"). El router se comía las 3 reintentos y caía al
+    especialista anterior: routing degradado y silencioso, visible sólo en Langfuse.
+    """
+    model = _RecordingClassifierModel()
+    monkeypatch.setattr(router_module, "build_chat_model", lambda *a, **k: model)
+    node = classify_intent(_tenant())
+
+    history = [
+        HumanMessage(content="¿tenés coca?"),
+        AIMessage(
+            content="Busco en el catálogo",
+            tool_calls=[{"name": "search_catalog", "args": {"q": "coca"}, "id": "c1"}],
+        ),
+        ToolMessage(content='[{"name": "Coca 1.5L"}]', tool_call_id="c1"),
+        AIMessage(content="Tengo Coca 1.5L a $2000"),
+        HumanMessage(content="dale, la llevo"),
+    ]
+    asyncio.run(node({"messages": history, "active_agent": "catalog"}))
+
+    sent = model.seen[0]
+    assert not any(isinstance(m, ToolMessage) for m in sent)
+    assert not any(getattr(m, "tool_calls", None) for m in sent)
+    # El texto del asistente sobrevive: es contexto útil para clasificar.
+    assert any("Busco en el catálogo" == m.content for m in sent)
 
 
 def test_classifier_failure_keeps_the_previous_specialist(monkeypatch):

@@ -2,7 +2,7 @@ import logging
 from textwrap import dedent
 from typing import Literal
 from pydantic import BaseModel, Field
-from langchain_core.messages import SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from app.ai_core.agents.llm import build_chat_model
 from app.ai_core.config.tenant import TenantConfig
 
@@ -57,6 +57,29 @@ SPECIALIST_PROFILES = {
         "signals": "I want to buy, place my order, checkout, confirm this item, purchase this",
     },
 }
+
+
+def router_view(messages: list) -> list:
+    """History the classifier can see, without orphan ``tool_calls``.
+
+    El router no necesita el tráfico de tools, pero no alcanza con filtrar los
+    ``ToolMessage``: eso deja un mensaje del asistente cuyos ``tool_calls`` se
+    quedan sin respuesta y el proveedor rechaza el request entero con un 400
+    ("An assistant message with 'tool_calls' must be followed by tool
+    messages"). El par se descarta completo: se van los ``ToolMessage`` y del
+    asistente que los pidió se conserva sólo el texto (si tenía).
+    """
+    view: list = []
+    for message in messages:
+        if isinstance(message, ToolMessage):
+            continue
+        if getattr(message, "tool_calls", None):
+            text = message.text
+            if text:
+                view.append(AIMessage(content=text))
+            continue
+        view.append(message)
+    return view
 
 
 def _classifier_prompt(tenant: TenantConfig) -> str:
@@ -127,11 +150,7 @@ def classify_intent(tenant: TenantConfig):
     system_prompt = _classifier_prompt(tenant)
 
     async def node(state) -> dict:
-        recent_messages = [
-            message
-            for message in state["messages"][-ROUTER_CONTEXT_MESSAGES:]
-            if not isinstance(message, ToolMessage)
-        ]
+        recent_messages = router_view(state["messages"])[-ROUTER_CONTEXT_MESSAGES:]
         prompts = [SystemMessage(content=system_prompt)]
         # `route_dispatch` has not run yet this turn, so this is still the
         # specialist the previous turn settled on. Absent on a thread's first turn.
