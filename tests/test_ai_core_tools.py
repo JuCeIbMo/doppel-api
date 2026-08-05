@@ -88,7 +88,7 @@ def test_async_tools_registered_as_coroutine(tool):
 def test_tool_returns_result_not_coroutine(monkeypatch):
     """The whole point: the model must receive data, not a coroutine object."""
     rows = [{"id": "p1", "name": "Agua", "price": 10.0, "in_stock": True,
-             "description": "1L", "tags": ["bebida"]}]
+             "has_image": True, "description": "1L", "tags": ["bebida"]}]
 
     async def fake_search(ctx, query=None, page=0):
         return {"items": rows, "page": page, "has_more": False}
@@ -354,6 +354,21 @@ def test_send_image_without_a_photo_is_not_an_error(monkeypatch):
 
     assert (result.ok, result.reason) == (False, "no_image")
     assert ctx.outbox.actions == []
+
+
+def test_send_image_only_queues_one_photo_per_turn(monkeypatch):
+    async def image(ctx, product_id):
+        return f"https://cdn/{product_id}.webp"
+
+    monkeypatch.setattr(channel_tools.storefront, "get_product_image", image)
+    ctx = _channel_ctx()
+
+    first = asyncio.run(send_image.ainvoke({"product_id": "p1", "ctx": ctx}))
+    second = asyncio.run(send_image.ainvoke({"product_id": "p2", "ctx": ctx}))
+
+    assert first.ok is True
+    assert (second.ok, second.reason) == (False, "image_already_queued")
+    assert [action.image_url for action in ctx.outbox.actions] == ["https://cdn/p1.webp"]
 
 
 def test_send_reply_buttons_namespaces_the_ids():

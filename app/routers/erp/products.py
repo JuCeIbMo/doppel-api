@@ -2,32 +2,54 @@
 
 from __future__ import annotations
 
-import asyncio
-import io
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
 from app.models.erp_schemas import (
-    ImportResult,
     ProductCreate,
-    ProductImageAnalysis,
     ProductResponse,
     ProductUpdate,
     VariantCreate,
     VariantResponse,
 )
-from app.services.erp.context import ERPContext, get_erp_context, log_activity
-from app.services.erp.exceptions import ValidationError
+from app.services.erp.context import ERPContext, get_erp_context
+from app.services.erp.product_creation import ProductCreationService
 from app.services.erp.products import ProductsService
-from app.services.images import optimize_image
-from app.services.storage import upload_product_image
-from app.services.vision import analyze_product_image
+from app.services.images import MAX_BYTES
 
 router = APIRouter()
 service = ProductsService()
+creation_service = ProductCreationService(service)
 
-_IMPORT_COLUMNS = ["name", "category", "sku", "barcode", "cost_price", "price", "unit", "low_stock_threshold"]
+
+async def _product_create_form(
+    name: Annotated[str, Form()],
+    description: Annotated[str | None, Form()] = None,
+    sku: Annotated[str | None, Form()] = None,
+    barcode: Annotated[str | None, Form()] = None,
+    category: Annotated[str | None, Form()] = None,
+    cost_price: Annotated[float, Form()] = 0,
+    price: Annotated[float, Form()] = 0,
+    unit: Annotated[str, Form()] = "unidad",
+    available: Annotated[bool, Form()] = True,
+    low_stock_threshold: Annotated[int, Form()] = 5,
+    tags: Annotated[list[str] | None, Form()] = None,
+) -> ProductCreate:
+    """Expose ProductCreate as ordinary multipart fields in OpenAPI/Swagger."""
+    return ProductCreate(
+        name=name,
+        description=description,
+        sku=sku,
+        barcode=barcode,
+        category=category,
+        cost_price=cost_price,
+        price=price,
+        unit=unit,
+        available=available,
+        low_stock_threshold=low_stock_threshold,
+        tags=tags or [],
+    )
 
 
 @router.get("", response_model=list[ProductResponse])
@@ -42,100 +64,22 @@ async def list_products(
 
 
 @router.post("", response_model=ProductResponse)
-async def create_product(body: ProductCreate, ctx: ERPContext = Depends(get_erp_context)):
-    return await service.create(ctx, body.model_dump(exclude_none=True))
-
-
-@router.post("/analyze-image", response_model=ProductImageAnalysis)
-async def analyze_image(
-    file: UploadFile = File(...), ctx: ERPContext = Depends(get_erp_context)
+async def create_product(
+    image: Annotated[UploadFile, File(description="Imagen principal obligatoria")],
+    body: ProductCreate = Depends(_product_create_form),
+    ctx: ERPContext = Depends(get_erp_context),
 ):
-    """Optimiza la imagen (WebP cuadrado), la sube a Storage y la analiza con Gemini.
-
-    NO crea el producto: devuelve la URL pública + nombre/descripción/tags sugeridos para
-    que el front los edite y luego guarde con POST /erp/products. Si Gemini falla o no está
-    configurado, igual devuelve la `image_url` con `ai_ok=false`.
-
-    Los dos pasos pesados salen del event loop: `optimize_image` es Pillow puro (CPU, cientos
-    de ms en una foto de celular) y va a un thread; el análisis de Gemini son segundos de red
-    y usa el cliente async del SDK. Corridos inline bloquearían el proceso entero —
-    incluido el webhook de WhatsApp de todos los tenants — mientras dura la subida.
-    """
-    optimized = await asyncio.to_thread(optimize_image, await file.read())
-    image_url = await upload_product_image(ctx.tenant_id, optimized)
-    analysis = await analyze_product_image(optimized, "image/webp")
-    await log_activity(ctx, action="product.image_analyzed", module="inventory",
-                 detail={"ai_ok": analysis["ai_ok"]})
-    return ProductImageAnalysis(image_url=image_url, **analysis)
+    """Create a complete product from metadata and its required primary image."""
+    return await creation_service.create(
+        ctx,
+        body.model_dump(exclude_none=True),
+        await image.read(MAX_BYTES + 1),
+    )
 
 
 @router.get("/barcode/{code}", response_model=ProductResponse)
 async def get_by_barcode(code: str, ctx: ERPContext = Depends(get_erp_context)):
     return await service.get_by_barcode(ctx, code)
-
-
-@router.get("/import/template")
-async def import_template(_ctx: ERPContext = Depends(get_erp_context)):
-    """Download an .xlsx template with the expected columns."""
-    from openpyxl import Workbook
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Productos"
-    ws.append(_IMPORT_COLUMNS)
-    ws.append(["Heineken 1L", "Cervezas", "HEI-1L", "7791234567890", 18.0, 25.0, "unidad", 6])
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return StreamingResponse(
-        buf,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="plantilla_productos.xlsx"'},
-    )
-
-
-@router.post("/import", response_model=ImportResult)
-async def import_products(
-    file: UploadFile = File(...), ctx: ERPContext = Depends(get_erp_context)
-):
-    """Import products row by row. Bad rows are skipped and reported, good rows are created."""
-    from openpyxl import load_workbook
-
-    try:
-        wb = load_workbook(io.BytesIO(await file.read()), read_only=True, data_only=True)
-    except Exception as exc:
-        raise ValidationError("No se pudo leer el archivo Excel", reason=str(exc))
-
-    ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
-        return ImportResult(imported=0, errors=[])
-
-    header = [str(c).strip().lower() if c is not None else "" for c in rows[0]]
-    imported, errors = 0, []
-    for i, raw in enumerate(rows[1:], start=2):
-        record = {header[j]: raw[j] for j in range(min(len(header), len(raw)))}
-        try:
-            if not record.get("name"):
-                raise ValueError("nombre vacío")
-            payload = ProductCreate(
-                name=str(record["name"]).strip(),
-                category=(str(record["category"]).strip() if record.get("category") else None),
-                sku=(str(record["sku"]).strip() if record.get("sku") else None),
-                barcode=(str(record["barcode"]).strip() if record.get("barcode") else None),
-                cost_price=float(record.get("cost_price") or 0),
-                price=float(record.get("price") or 0),
-                unit=(str(record["unit"]).strip() if record.get("unit") else "unidad"),
-                low_stock_threshold=int(record.get("low_stock_threshold") or 5),
-            )
-            await service.create(ctx, payload.model_dump(exclude_none=True))
-            imported += 1
-        except Exception as exc:  # noqa: BLE001 — per-row, reported not raised
-            errors.append({"row": i, "reason": str(exc)})
-
-    await log_activity(ctx, action="products.imported", module="inventory",
-                 detail={"imported": imported, "error_count": len(errors)})
-    return ImportResult(imported=imported, errors=errors)
 
 
 @router.get("/{product_id}", response_model=ProductResponse)

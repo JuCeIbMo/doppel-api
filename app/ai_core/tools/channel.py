@@ -54,6 +54,8 @@ async def send_image(product_id: str, ctx: ToolContext) -> ChannelActionResult:
         raise PermissionError("send_image requires public or admin role")
     if ctx.outbox is None:
         return _NO_CHANNEL
+    if any(isinstance(action, SendImageAction) for action in ctx.outbox.actions):
+        return ChannelActionResult(ok=False, reason="image_already_queued")
 
     image_url = await storefront.get_product_image(_erp_ctx(ctx), product_id)
     if not image_url:

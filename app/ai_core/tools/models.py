@@ -7,6 +7,7 @@ class ProductResult(BaseModel):
     description: str | None
     price: float
     in_stock: bool
+    has_image: bool = False
     tags: list[str] = Field(default_factory=list)
 
 

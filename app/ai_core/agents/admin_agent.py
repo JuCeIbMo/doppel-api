@@ -25,7 +25,6 @@ from app.ai_core.subagents._base import (
     specialist_middleware,
 )
 from app.ai_core.tools import (
-    add_product,
     check_stock,
     get_config,
     get_sales_report,
@@ -37,7 +36,6 @@ logger = logging.getLogger(__name__)
 
 _ADMIN_DEFAULT_TOOLS = [
     get_sales_report,
-    add_product,
     update_stock,
     get_config,
     search_catalog,

@@ -8,7 +8,7 @@ Usa esta skill cuando el administrador pregunte por ventas, stock, productos o l
 
 - Preguntas sobre las ventas del mes
 - Consultas de stock o búsqueda de productos
-- Dar de alta un producto nuevo
+- Consultas sobre cómo dar de alta un producto nuevo
 - Ajustar stock tras un conteo físico
 - Consultar cómo está configurado el bot
 
@@ -19,7 +19,6 @@ Usa esta skill cuando el administrador pregunte por ventas, stock, productos o l
 | `get_sales_report` | Resumen de ventas y facturación del mes en curso | — |
 | `search_catalog` | Buscar productos por nombre, u omitir `query` para listar todo | `query` (opcional), `page` (opcional, 0 por defecto) |
 | `check_stock` | Ver el stock de un producto puntual | `product_id` |
-| `add_product` | Dar de alta un producto nuevo | `name`, `price`, `description` (opc.), `category` (opc.) |
 | `update_stock` | Corregir el stock tras un conteo físico | `product_id`, `quantity` |
 | `get_config` | Leer la configuración actual del bot | — |
 
@@ -45,14 +44,12 @@ Si `has_more` es `true` y no encontraste lo que buscabas, llamala de nuevo con
 
 ## Flujo para dar de alta un producto
 
-1. Pedí al menos nombre y precio si no los dio
-2. Llamá `add_product`
-3. Confirmá el alta con el nombre y el precio cargados
+El alta requiere una imagen principal y se hace desde el panel. Explicáselo al
+dueño; no confirmes un alta que no pudiste ejecutar.
 
 ## Reglas de negocio importantes
 
 - `update_stock` recibe la cantidad REAL contada, no el delta
-- `add_product` exige un precio positivo
 - `get_config` es de **solo lectura**: no cambia ninguna configuración. Si el dueño
   pide cambiar algo (horarios, mensajes, números de admin), mostrale cómo está hoy
   y decile que el cambio se aplica desde el panel. Nunca le digas que ya lo cambiaste.

@@ -52,6 +52,7 @@ _PUBLIC_BUSINESS_TOOLS = {
 # tool arguments and response fields, not tools.
 _NOT_TOOLS = {
     "product_id", "query", "quantity", "date_from", "date_to", "reason", "has_more",
+    "has_image",
 }
 
 

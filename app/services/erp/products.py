@@ -7,6 +7,7 @@ its current quantity — IA-friendly for the bot.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from app.services.erp.context import ERPContext, log_activity
@@ -37,6 +38,21 @@ async def _stock_map(tenant_id: str, product_ids: list[str]) -> dict[str, float]
     return totals
 
 
+async def _image_presence_map(tenant_id: str, product_ids: list[str]) -> dict[str, bool]:
+    """Resolve image presence without leaking image URLs into catalog results."""
+    if not product_ids:
+        return {}
+    rows = (
+        await get_supabase()
+        .table("products")
+        .select("id, image_url")
+        .eq("tenant_id", tenant_id)
+        .in_("id", product_ids)
+        .execute()
+    ).data or []
+    return {row["id"]: bool((row.get("image_url") or "").strip()) for row in rows}
+
+
 class ProductsService:
     async def search_available(
         self,
@@ -62,9 +78,14 @@ class ProductsService:
             },
         ).execute()
         rows = result.data or []
-        stock = await _stock_map(ctx.tenant_id, [row["id"] for row in rows])
+        product_ids = [row["id"] for row in rows]
+        stock, images = await asyncio.gather(
+            _stock_map(ctx.tenant_id, product_ids),
+            _image_presence_map(ctx.tenant_id, product_ids),
+        )
         for row in rows:
             row["stock"] = stock.get(row["id"], 0)
+            row["has_image"] = images.get(row["id"], False)
         return rows
 
     async def list(
@@ -85,6 +106,7 @@ class ProductsService:
         stock = await _stock_map(ctx.tenant_id, [r["id"] for r in rows])
         for r in rows:
             r["stock"] = stock.get(r["id"], 0)
+            r["has_image"] = bool((r.get("image_url") or "").strip())
         return rows
 
     async def get(self, ctx: ERPContext, product_id: str) -> dict:

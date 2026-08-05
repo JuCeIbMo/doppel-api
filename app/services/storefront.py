@@ -61,6 +61,7 @@ async def search_catalog(ctx: ERPContext, query: str | None = None, page: int = 
     items = [
         {"id": r["id"], "name": r["name"], "price": r["price"],
          "in_stock": float(r.get("stock", 0)) > 0,
+         "has_image": bool(r.get("has_image", r.get("image_url"))),
          "description": r.get("description") or "", "tags": r.get("tags") or []}
         for r in rows
     ]
@@ -74,11 +75,15 @@ async def get_product_image(ctx: ERPContext, product_id: str) -> str | None:
     ve el modelo, porque si la ve la pega en el texto de la respuesta. El agente
     trabaja con el `id` y el canal resuelve la foto.
     """
-    try:
-        product = await ProductsService().get(ctx, product_id)
-    except NotFound:
-        return None
-    return product.get("image_url") or None
+    rows = (
+        await get_supabase().table("products").select("image_url")
+        .eq("tenant_id", ctx.tenant_id)
+        .eq("id", product_id)
+        .eq("available", True)
+        .limit(1)
+        .execute()
+    ).data or []
+    return (rows[0].get("image_url") or None) if rows else None
 
 
 async def register_sale(

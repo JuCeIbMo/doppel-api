@@ -23,7 +23,6 @@ class ProductCreate(BaseModel):
     sku: str | None = Field(default=None, max_length=120)
     barcode: str | None = Field(default=None, max_length=120)
     category: str | None = Field(default=None, max_length=120)
-    image_url: str | None = None
     cost_price: float = Field(default=0, ge=0)
     price: float = Field(default=0, ge=0)  # sale price (existing column)
     unit: str = Field(default="unidad", max_length=40)
@@ -38,7 +37,6 @@ class ProductUpdate(BaseModel):
     sku: str | None = Field(default=None, max_length=120)
     barcode: str | None = Field(default=None, max_length=120)
     category: str | None = Field(default=None, max_length=120)
-    image_url: str | None = None
     cost_price: float | None = Field(default=None, ge=0)
     price: float | None = Field(default=None, ge=0)
     unit: str | None = Field(default=None, max_length=40)
@@ -60,24 +58,12 @@ class ProductResponse(BaseModel):
     unit: str
     available: bool
     has_variants: bool
+    has_image: bool = False
     low_stock_threshold: int
     tags: list[str] = Field(default_factory=list)
     stock: float | None = None  # current quantity, joined from inventory when requested
     created_at: str | None = None
-
-
-class ProductImageAnalysis(BaseModel):
-    """Sugerencias del análisis de imagen (Gemini) + la URL ya subida a Storage.
-
-    NO crea el producto: el front muestra esto para editar y luego guarda con
-    POST /erp/products. `ai_ok=False` => Gemini no corrió/falló; completar a mano.
-    """
-
-    image_url: str
-    name: str | None = None
-    description: str | None = None
-    tags: list[str] = Field(default_factory=list)
-    ai_ok: bool
+    image_analysis_ok: bool | None = None
 
 
 class VariantCreate(BaseModel):
@@ -98,11 +84,6 @@ class VariantResponse(BaseModel):
     cost_price: float | None = None
     sale_price: float | None = None
     is_active: bool
-
-
-class ImportResult(BaseModel):
-    imported: int
-    errors: list[dict] = Field(default_factory=list)
 
 
 # --- Inventory ---------------------------------------------------------------

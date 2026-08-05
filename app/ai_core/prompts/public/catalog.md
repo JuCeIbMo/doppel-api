@@ -23,6 +23,9 @@ Usa esta skill cuando el cliente pregunte por productos, precios o disponibilida
 cliente, llamala de nuevo con `page + 1`. Nunca digas que "eso es todo" el
 catálogo si `has_more` vino en `true`.
 
+Cada resultado trae `has_image`. Llamá `send_image` únicamente cuando sea
+`true`; no pruebes a ciegas ni inventes una foto.
+
 Si el cliente pregunta por horarios, dirección o formas de pago, no tenés cómo
 consultarlos: decile que eso lo confirma alguien del equipo y ofrecele pasarlo.
 Nunca inventes esos datos.
@@ -44,6 +47,7 @@ Reglas, sin excepción:
   cliente ya las ve. Alcanza una línea de intro.
 - Como máximo UN mensaje interactivo por turno, y nunca `send_reply_buttons` y
   `send_list_message` juntos.
+- Como máximo UNA foto por turno.
 - Si `send_image` devuelve `ok: false`, describí el producto en palabras y no
   menciones que falló nada.
 

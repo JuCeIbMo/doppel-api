@@ -25,7 +25,7 @@ ALL_PUBLIC_TOOLS = (
     "send_image", "send_reply_buttons", "send_list_message",
 )
 ALL_ADMIN_TOOLS = (
-    "get_sales_report", "add_product", "update_stock", "get_config",
+    "get_sales_report", "update_stock", "get_config",
     "search_catalog", "check_stock",
 )
 

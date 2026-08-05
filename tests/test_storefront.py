@@ -78,9 +78,10 @@ def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
     assert result == {
         "items": [
             {"id": "p1", "name": "Coca 500ml", "price": 1.2, "in_stock": True,
-             "description": "Gaseosa cola", "tags": ["bebida", "gaseosa"]},
+             "has_image": False, "description": "Gaseosa cola",
+             "tags": ["bebida", "gaseosa"]},
             {"id": "p2", "name": "Agua", "price": 0.8, "in_stock": False,
-             "description": "", "tags": []},
+             "has_image": False, "description": "", "tags": []},
         ],
         "page": 0,
         "has_more": False,
@@ -115,7 +116,7 @@ def test_search_catalog_without_query_keeps_alphabetical_listing(monkeypatch):
 def test_products_search_rpc_is_tenant_scoped_and_preserves_rank_order(monkeypatch):
     captured = {}
 
-    class Query:
+    class InventoryQuery:
         def select(self, fields):
             assert fields == "product_id, quantity"
             return self
@@ -134,6 +135,25 @@ def test_products_search_rpc_is_tenant_scoped_and_preserves_rank_order(monkeypat
                 {"product_id": "p2", "quantity": 0},
             ]})()
 
+    class ProductsQuery:
+        def select(self, fields):
+            assert fields == "id, image_url"
+            return self
+
+        def eq(self, field, value):
+            assert (field, value) == ("tenant_id", "t1")
+            return self
+
+        def in_(self, field, values):
+            assert (field, values) == ("id", ["p2", "p1"])
+            return self
+
+        async def execute(self):
+            return type("Result", (), {"data": [
+                {"id": "p1", "image_url": "https://cdn/p1.webp"},
+                {"id": "p2", "image_url": None},
+            ]})()
+
     class RPC:
         async def execute(self):
             return type("Result", (), {"data": [
@@ -147,8 +167,10 @@ def test_products_search_rpc_is_tenant_scoped_and_preserves_rank_order(monkeypat
             return RPC()
 
         def table(self, name):
-            assert name == "inventory"
-            return Query()
+            if name == "inventory":
+                return InventoryQuery()
+            assert name == "products"
+            return ProductsQuery()
 
     monkeypatch.setattr("app.services.erp.products.get_supabase", lambda: Supabase())
 
@@ -169,6 +191,7 @@ def test_products_search_rpc_is_tenant_scoped_and_preserves_rank_order(monkeypat
     }
     assert [row["id"] for row in rows] == ["p2", "p1"]
     assert [row["stock"] for row in rows] == [0, 3.0]
+    assert [row["has_image"] for row in rows] == [False, True]
 
 
 def test_search_catalog_paginates(monkeypatch):
@@ -189,6 +212,44 @@ def test_search_catalog_paginates(monkeypatch):
     page2 = asyncio.run(storefront.search_catalog(CTX, page=2))
     assert [p["id"] for p in page2["items"]] == [f"p{i}" for i in range(40, 45)]
     assert page2["has_more"] is False
+
+
+def test_get_product_image_is_tenant_scoped_and_requires_available(monkeypatch):
+    captured = []
+
+    class Query:
+        def select(self, fields):
+            assert fields == "image_url"
+            return self
+
+        def eq(self, field, value):
+            captured.append((field, value))
+            return self
+
+        def limit(self, value):
+            assert value == 1
+            return self
+
+        async def execute(self):
+            return type("Result", (), {
+                "data": [{"image_url": "https://cdn.test/t1/p1.webp"}]
+            })()
+
+    class Supabase:
+        def table(self, name):
+            assert name == "products"
+            return Query()
+
+    monkeypatch.setattr(storefront, "get_supabase", lambda: Supabase())
+
+    url = asyncio.run(storefront.get_product_image(CTX, "p1"))
+
+    assert url == "https://cdn.test/t1/p1.webp"
+    assert captured == [
+        ("tenant_id", "t1"),
+        ("id", "p1"),
+        ("available", True),
+    ]
 
 
 from app.services.erp.exceptions import ERPError, InsufficientStock, NotFound

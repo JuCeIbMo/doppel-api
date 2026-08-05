@@ -39,7 +39,8 @@ async def search_catalog(query: str | None, ctx: ToolContext, page: int = 0) -> 
         items=[
             ProductResult(
                 id=r["id"], name=r["name"], description=r["description"],
-                price=r["price"], in_stock=r["in_stock"], tags=r["tags"],
+                price=r["price"], in_stock=r["in_stock"],
+                has_image=r["has_image"], tags=r["tags"],
             )
             for r in result["items"]
         ],
