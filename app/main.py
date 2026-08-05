@@ -40,8 +40,10 @@ async def lifespan(app: FastAPI):
     # Imported here, not at module scope: pulling in langgraph on every import
     # of `app.main` is dead weight for deployments with the bot disabled.
     from app.ai_core.persistence.checkpointer import close_pool
+    from app.services.message_debounce import close_debounce
 
     await close_pool()
+    await close_debounce()
     logger.info("doppel-api stopped")
 
 

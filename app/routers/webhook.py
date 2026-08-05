@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import tempfile
@@ -22,6 +23,7 @@ from app.ai_core.channel.actions import (
 )
 from app.ai_core.channel.inbound import InteractiveReply
 from app.services import meta_api
+from app.services.message_debounce import debounce_message
 from app.services.phone import normalize_phone
 from app.services.supabase_client import get_supabase
 from app.services.whatsapp_delivery import plan_delivery
@@ -57,6 +59,7 @@ async def verify_webhook(
 @router.post("/webhook/whatsapp")
 async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
     """Receive inbound messages from Meta. Always returns 200."""
+    scheduled_responses: list[tuple] = []
     try:
         body = await request.body()
 
@@ -154,24 +157,46 @@ async def receive_webhook(request: Request, background_tasks: BackgroundTasks):
 
                     # Schedule bot response through ai-core. Manager bypasses bot_enabled.
                     if should_process:
-                        background_tasks.add_task(
-                            _process_bot_response,
-                            request.app.state.http_client,
-                            account["tenant_id"],
-                            account["id"],
-                            user_phone,
-                            content or "",
-                            mode,
-                            wa_message_id,
-                            media,
-                            inbound.interactive,
+                        scheduled_responses.append(
+                            (
+                                account["tenant_id"],
+                                account["id"],
+                                user_phone,
+                                content or "",
+                                mode,
+                                wa_message_id,
+                                media,
+                                inbound.interactive,
+                            )
                         )
 
     except Exception:
         logger.exception("Error processing webhook")
 
+    if scheduled_responses:
+        # Starlette awaits BackgroundTasks in insertion order. One task that
+        # gathers all waiters is required for messages delivered in the same
+        # Meta webhook to actually share the debounce window.
+        background_tasks.add_task(
+            _run_scheduled_responses,
+            request.app.state.http_client,
+            scheduled_responses,
+        )
+
     # Always return 200 — Meta retries if it doesn't get 200
     return Response(status_code=200)
+
+
+async def _run_scheduled_responses(
+    http_client: httpx.AsyncClient,
+    scheduled_responses: list[tuple],
+) -> None:
+    await asyncio.gather(
+        *(
+            _debounce_bot_response(http_client, *args)
+            for args in scheduled_responses
+        )
+    )
 
 
 def _log_whatsapp_statuses(phone_number_id: str, statuses: list[dict]) -> None:
@@ -531,3 +556,72 @@ async def _process_bot_response(
         # borrarse también cuando el turno corta antes (bot apagado, cuenta no
         # encontrada, agente caído), que es justo cuando es fácil olvidarse.
         _cleanup_media_files(media)
+
+
+async def _debounce_bot_response(
+    http_client: httpx.AsyncClient,
+    tenant_id: str,
+    wa_account_id: str,
+    user_phone: str,
+    inbound_text: str,
+    mode: str,
+    inbound_message_id: str | None,
+    media: list[dict] | None = None,
+    interactive: InteractiveReply | None = None,
+) -> None:
+    """Coalesce one conversation's message burst before invoking the bot."""
+    message = {
+        "tenant_id": tenant_id,
+        "wa_account_id": wa_account_id,
+        "user_phone": user_phone,
+        "inbound_text": inbound_text,
+        "mode": mode,
+        "inbound_message_id": inbound_message_id,
+        "media": media or [],
+        "interactive": (
+            {"id": interactive.id, "title": interactive.title}
+            if interactive is not None
+            else None
+        ),
+    }
+    conversation_id = f"{tenant_id}:{mode}:{user_phone}"
+    batch = await debounce_message(conversation_id, message)
+    if not batch:
+        return
+
+    texts: list[str] = []
+    combined_media: list[dict] = []
+    last = batch[-1]
+    single_interactive: InteractiveReply | None = None
+
+    for item in batch:
+        combined_media.extend(item.get("media") or [])
+        reply_data = item.get("interactive")
+        if reply_data:
+            reply = InteractiveReply(**reply_data)
+            # For a one-message batch preserve the typed channel object. In a
+            # mixed batch render each tap in place so no adjacent text is lost.
+            if len(batch) == 1:
+                single_interactive = reply
+            else:
+                texts.append(reply.as_agent_note())
+        elif item.get("inbound_text"):
+            texts.append(item["inbound_text"])
+
+    logger.info(
+        "Debounced inbound messages tenant=%s phone=%s count=%d",
+        tenant_id,
+        user_phone,
+        len(batch),
+    )
+    await _process_bot_response(
+        http_client,
+        tenant_id,
+        last["wa_account_id"],
+        user_phone,
+        "\n".join(texts),
+        last["mode"],
+        last.get("inbound_message_id"),
+        combined_media,
+        single_interactive,
+    )

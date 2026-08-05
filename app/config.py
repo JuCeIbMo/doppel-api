@@ -32,8 +32,11 @@ class Settings(BaseSettings):
     META_API_RETRIES: int = 3
     META_API_RETRY_DELAY_MS: int = 300
 
-    # Checkpointer de LangGraph (Redis con RedisJSON + RediSearch).
+    # Checkpointer de LangGraph (Postgres separado para historial de conversación)
+    CHAT_DB_URL: str = ""
+    # Debounce distribuido de mensajes entrantes. Vacío o 0 desactiva el debounce.
     REDIS_URL: str = ""
+    MESSAGE_DEBOUNCE_SECONDS: float = 2.0
     # OpenAI Whisper para transcribir notas de voz de WhatsApp
     OPENAI_API_KEY: str = ""
     # DeepSeek: proveedor del LLM del agente (app/ai_core)

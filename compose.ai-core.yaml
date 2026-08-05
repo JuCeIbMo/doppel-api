@@ -14,23 +14,43 @@ services:
     env_file:
       - .env
     environment:
-      # El checkpointer oficial de LangGraph usa RedisJSON + RediSearch.
-      REDIS_URL: redis://langgraph-redis:6379/0
+      # El agente LangGraph corre dentro de doppel-api y guarda checkpoints de
+      # conversación (historial de mensajes) aquí. El host es el nombre del
+      # servicio Postgres de abajo (no localhost).
+      CHAT_DB_URL: postgresql://ai:ai@chat-postgres:5432/chat
+      # Redis sólo coordina el debounce de mensajes consecutivos.
+      REDIS_URL: redis://message-redis:6379/0
       # Flag de "bot activado": cualquier valor no vacío activa el bot.
       AI_CORE_URL: enabled
     depends_on:
-      langgraph-redis:
+      chat-postgres:
+        condition: service_healthy
+      message-redis:
         condition: service_healthy
     ports:
       - "8000:8000"
     restart: unless-stopped
 
-  langgraph-redis:
-    image: redis:8.0
-    container_name: langgraph-redis
-    command: ["redis-server", "--appendonly", "yes"]
+  chat-postgres:
+    image: pgvector/pgvector:pg17
+    container_name: chat-postgres
+    environment:
+      POSTGRES_DB: chat
+      POSTGRES_USER: ai
+      POSTGRES_PASSWORD: ai
     volumes:
-      - langgraph-redis-data:/data
+      - chat-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai -d chat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  message-redis:
+    image: redis:7-alpine
+    container_name: message-redis
+    command: ["redis-server", "--appendonly", "no"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -39,4 +59,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  langgraph-redis-data:
+  chat-postgres-data:
