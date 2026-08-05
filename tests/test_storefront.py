@@ -1,18 +1,7 @@
 """Unit tests for storefront lean reads.
 
-app.config instantiates Settings() at import time, requiring these env vars.
-Set safe test defaults before import.
+Shared test environment is loaded before collection by `tests/conftest.py`.
 """
-
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import asyncio
 
@@ -21,7 +10,6 @@ from app.services.erp.context import ERPContext
 from app.services.erp.products import ProductsService
 
 CTX = ERPContext(tenant_id="t1", actor="whatsapp_bot", actor_label="Bot WhatsApp")
-
 
 class _BizQuery:
     def __init__(self, rows):
@@ -38,13 +26,11 @@ class _BizQuery:
             data = rows
         return R()
 
-
 class _BizSupabase:
     def __init__(self, rows):
         self._rows = rows
     def table(self, _name):
         return _BizQuery(self._rows)
-
 
 def test_business_info_returns_profile(monkeypatch):
     row = {"name": "Kiosco", "description": "d", "hours": "9-18",
@@ -52,13 +38,11 @@ def test_business_info_returns_profile(monkeypatch):
     monkeypatch.setattr(storefront, "get_supabase", lambda: _BizSupabase([row]))
     assert asyncio.run(storefront.business_info(CTX)) == row
 
-
 def test_business_info_empty_returns_blanks(monkeypatch):
     monkeypatch.setattr(storefront, "get_supabase", lambda: _BizSupabase([]))
     result = asyncio.run(storefront.business_info(CTX))
     assert result == {"name": "", "description": "", "hours": "",
                       "address": "", "payment_methods": ""}
-
 
 def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
     async def fake_search(self, ctx, query, *, limit=50, offset=0):
@@ -254,7 +238,6 @@ def test_get_product_image_is_tenant_scoped_and_requires_available(monkeypatch):
 
 from app.services.erp.exceptions import ERPError, InsufficientStock, NotFound
 
-
 def test_register_sale_happy_path(monkeypatch):
     captured = {}
 
@@ -281,7 +264,6 @@ def test_register_sale_happy_path(monkeypatch):
     assert captured["body"]["payment_method"] == "whatsapp"
     assert captured["body"]["items"] == [{"product_id": "p1", "quantity": 2}]
 
-
 def test_register_sale_unknown_client_keeps_none(monkeypatch):
     async def fake_get_by_phone(self, ctx, phone):
         raise NotFound("no existe")
@@ -296,7 +278,6 @@ def test_register_sale_unknown_client_keeps_none(monkeypatch):
     result = asyncio.run(storefront.register_sale(
         CTX, items=[{"product_id": "p1", "quantity": 1}], customer_phone="+5491100"))
     assert result["ok"] is True
-
 
 def test_register_sale_erp_error_on_client_lookup_degrades_gracefully(monkeypatch):
     """Un ERPError genérico en get_by_phone no debe abortar la venta; client_id=None."""
@@ -319,7 +300,6 @@ def test_register_sale_erp_error_on_client_lookup_degrades_gracefully(monkeypatc
     assert result["ok"] is True
     assert captured["body"]["client_id"] is None
 
-
 def test_register_sale_insufficient_stock_returns_error(monkeypatch):
     async def fake_create_sale(self, ctx, body):
         raise InsufficientStock(product_id="p1", available=0, requested=2)
@@ -331,7 +311,6 @@ def test_register_sale_insufficient_stock_returns_error(monkeypatch):
     assert result["ok"] is False
     assert result["error"] == "insufficient_stock"
     assert "message" in result and "detail" in result
-
 
 def test_register_sale_forwards_idempotency_key(monkeypatch):
     """La clave tiene que llegar al RPC: es lo único que lo hace idempotente."""
@@ -349,7 +328,6 @@ def test_register_sale_forwards_idempotency_key(monkeypatch):
     assert captured["body"]["idempotency_key"] == "k-123"
     assert result["duplicate"] is False
 
-
 def test_register_sale_marks_idempotent_replay_as_duplicate(monkeypatch):
     """El RPC devuelve la venta ya registrada; el shape lean tiene que decirlo."""
 
@@ -366,7 +344,6 @@ def test_register_sale_marks_idempotent_replay_as_duplicate(monkeypatch):
     assert result["ok"] is True
     assert result["duplicate"] is True
     assert result["total"] == 1.2
-
 
 def test_register_sale_requires_items():
     result = asyncio.run(storefront.register_sale(CTX, items=[]))

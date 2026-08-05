@@ -1,21 +1,11 @@
 """Regression tests for the Redis message debounce."""
 
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
-
 import asyncio
 from unittest.mock import AsyncMock
 
 from app.ai_core.channel.inbound import InteractiveReply
-from app.routers import webhook
 from app.services import message_debounce as debounce
+from app.whatsapp import webhook
 
 
 class FakeRedis:
@@ -101,10 +91,10 @@ def test_debounced_webhook_combines_text_media_and_interactive_in_order(monkeypa
 
     process = AsyncMock()
     monkeypatch.setattr(webhook, "debounce_message", return_batch)
-    monkeypatch.setattr(webhook, "_process_bot_response", process)
+    monkeypatch.setattr(webhook, "process_bot_response", process)
 
     asyncio.run(
-        webhook._debounce_bot_response(
+        webhook.debounce_bot_response(
             AsyncMock(),
             "t1",
             "wa1",
@@ -128,20 +118,20 @@ def test_messages_from_one_meta_webhook_start_debounce_concurrently(monkeypatch)
     active = 0
     peak = 0
 
-    async def track_waiter(_http_client, *_args):
+    async def track_waiter(_http_client, *_args, **_kwargs):
         nonlocal active, peak
         active += 1
         peak = max(peak, active)
         await asyncio.sleep(0)
         active -= 1
 
-    monkeypatch.setattr(webhook, "_debounce_bot_response", track_waiter)
+    monkeypatch.setattr(webhook, "debounce_bot_response", track_waiter)
     scheduled = [
         ("t1", "wa1", "5911", "uno", "client", "m1", [], None),
         ("t1", "wa1", "5911", "dos", "client", "m2", [], None),
     ]
 
-    asyncio.run(webhook._run_scheduled_responses(AsyncMock(), scheduled))
+    asyncio.run(webhook.run_scheduled_responses(AsyncMock(), scheduled))
 
     assert peak == 2
 

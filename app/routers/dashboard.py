@@ -22,7 +22,7 @@ from app.models.schemas import (
     WhatsAppAccountResponse,
 )
 from app.security import decrypt_token
-from app.services import meta_api
+from app.whatsapp import meta
 from app.services.phone import normalize_phone
 from app.services.supabase_client import get_supabase
 
@@ -209,7 +209,7 @@ async def disconnect_whatsapp(request: Request, tenant: dict = Depends(get_curre
 
         try:
             access_token = decrypt_token(token_encrypted, settings.ENCRYPTION_KEY)
-            await meta_api.unsubscribe_app_from_waba(
+            await meta.unsubscribe_app_from_waba(
                 http_client,
                 waba_id,
                 access_token,

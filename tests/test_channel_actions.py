@@ -3,19 +3,8 @@
 Todo lo de acá es sin red y sin LLM: son las reglas que deciden qué sale por
 WhatsApp y los límites que Meta impone sobre esos payloads.
 
-app.config instantiates Settings() at import time, requiring these env vars.
-Set safe test defaults before import.
+Shared test environment is loaded before collection by `tests/conftest.py`.
 """
-
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import unicodedata
 
@@ -34,8 +23,7 @@ from app.ai_core.channel.actions import (
     SendTextAction,
     TurnResult,
 )
-from app.services.whatsapp_delivery import plan_delivery
-
+from app.whatsapp.delivery import plan_delivery
 
 # --- reacciones -------------------------------------------------------------
 
@@ -44,20 +32,16 @@ def test_reaction_matches_keywords_ignoring_accents_and_case():
     # "buen día" con acento tiene que matchear la clave "buen dia".
     assert courtesy.choose_reaction("buen día!") in ("👋", "😃")
 
-
 def test_first_contact_always_waves():
     """Gana sobre el texto: el saludo inicial merece el mismo gesto siempre."""
     assert courtesy.choose_reaction("jajaja", first_contact=True) == "👋"
-
 
 def test_reaction_falls_back_to_attachment_type():
     assert courtesy.choose_reaction(None, "image") == "👀"
     assert courtesy.choose_reaction(None, "voice") == "👂"
 
-
 def test_no_reaction_when_nothing_applies():
     assert courtesy.choose_reaction("cuánto sale el número 4", "text") is None
-
 
 def test_every_reaction_emoji_is_a_single_codepoint():
     """Meta rechaza de forma inconsistente los emojis con variation selector.
@@ -71,7 +55,6 @@ def test_every_reaction_emoji_is_a_single_codepoint():
     for emoji in pools:
         assert len(emoji) == 1, f"{emoji!r} ({unicodedata.name(emoji[0])}) no es de un codepoint"
 
-
 # --- pausa de tipeo ---------------------------------------------------------
 
 def test_typing_pause_grows_with_length_and_is_capped():
@@ -81,15 +64,12 @@ def test_typing_pause_grows_with_length_and_is_capped():
     assert short < long
     assert long <= courtesy.TYPING_MAX_SECONDS * (1 + courtesy.TYPING_JITTER)
 
-
 def test_typing_pause_is_zero_once_the_turn_already_took_longer():
     """El LLM ya tardó más que la pausa objetivo: no hay nada que simular."""
     assert courtesy.typing_pause("hola", elapsed=60.0) == 0.0
 
-
 def test_typing_pause_handles_empty_text():
     assert courtesy.typing_pause(None) > 0.0
-
 
 # --- límites de los modelos de acción ---------------------------------------
 #
@@ -104,18 +84,15 @@ def test_more_than_three_buttons_is_rejected():
             buttons=[ReplyButton(id=str(i), title=f"b{i}") for i in range(4)],
         )
 
-
 def test_zero_buttons_is_rejected():
     with pytest.raises(ValidationError):
         SendButtonsAction(body="elegí", buttons=[])
-
 
 def test_button_title_is_truncated():
     button = ReplyButton(id="choice:x", title="Un título larguísimo que no entra")
 
     assert button.title == "Un título larguísimo"
     assert len(button.title) == 20
-
 
 def test_list_rejects_more_than_ten_rows_across_sections():
     sections = [
@@ -126,7 +103,6 @@ def test_list_rejects_more_than_ten_rows_across_sections():
     with pytest.raises(ValidationError, match="10 rows in total"):
         SendListAction(body="mirá", button_label="Ver", sections=sections)
 
-
 def test_list_accepts_exactly_ten_rows():
     sections = [
         ListSection(title="s", rows=[ListRow(id=f"r{j}", title=f"f{j}") for j in range(10)]),
@@ -134,7 +110,6 @@ def test_list_accepts_exactly_ten_rows():
     action = SendListAction(body="mirá", button_label="Ver", sections=sections)
 
     assert sum(len(section.rows) for section in action.sections) == 10
-
 
 def test_list_section_meta_shape_omits_empty_descriptions():
     section = ListSection(title="Bebidas", rows=[
@@ -150,7 +125,6 @@ def test_list_section_meta_shape_omits_empty_descriptions():
         ],
     }
 
-
 # --- plan de entrega --------------------------------------------------------
 
 def test_a_single_photo_absorbs_the_text_as_caption():
@@ -164,7 +138,6 @@ def test_a_single_photo_absorbs_the_text_as_caption():
     assert plan[0].kind == "image"
     assert plan[0].caption == "Esta es la remera azul"
 
-
 def test_two_photos_keep_the_text_as_its_own_message():
     plan = plan_delivery(TurnResult(
         text="Tengo estas dos",
@@ -176,7 +149,6 @@ def test_two_photos_keep_the_text_as_its_own_message():
 
     assert [action.kind for action in plan] == ["text", "image", "image"]
 
-
 def test_a_photo_with_its_own_caption_is_left_alone():
     plan = plan_delivery(TurnResult(
         text="Mirá",
@@ -185,7 +157,6 @@ def test_a_photo_with_its_own_caption_is_left_alone():
 
     assert [action.kind for action in plan] == ["text", "image"]
     assert plan[1].caption == "Remera"
-
 
 def test_action_order_is_never_rearranged():
     """Que la foto vaya antes que los botones que la referencian es semántico."""
@@ -199,7 +170,6 @@ def test_action_order_is_never_rearranged():
 
     assert [action.kind for action in plan] == ["image", "buttons"]
 
-
 def test_long_text_is_split_instead_of_failing_whole():
     """Sin esto Meta devuelve 400 y el cliente no recibe absolutamente nada."""
     paragraphs = "\n\n".join(["x" * 500] * 20)  # ~10500 chars
@@ -209,7 +179,6 @@ def test_long_text_is_split_instead_of_failing_whole():
     assert all(isinstance(action, SendTextAction) for action in plan)
     assert all(len(action.body) <= MAX_TEXT for action in plan)
     assert "".join(action.body.replace("\n", "") for action in plan).count("x") == 10000
-
 
 def test_an_empty_turn_produces_nothing_to_send():
     assert plan_delivery(TurnResult(text="   ")) == []

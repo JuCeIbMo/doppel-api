@@ -14,19 +14,8 @@ Each of these was a real finding from the Agno -> LangChain port review:
   table with no retention policy.
 - Two messages from one customer ran two turns against the same checkpoint.
 
-app.config instantiates Settings() at import time, requiring these env vars.
-Set safe test defaults before import.
+Shared test environment is loaded before collection by `tests/conftest.py`.
 """
-
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import asyncio
 
@@ -36,7 +25,7 @@ from app.ai_core import bridge
 from app.ai_core.config.tenant import AdminAgentConfig, PublicAgentConfig, TenantConfig
 from app.ai_core.observability import tracing
 from app.ai_core.observability.langfuse import GRAPH_RECURSION_LIMIT
-from app.ai_core.subagents._base import (
+from app.ai_core.common.middleware import (
     MAX_CATALOG_SEARCHES_PER_RUN,
     MAX_TOOL_CALLS_PER_RUN,
 )
@@ -51,15 +40,12 @@ TENANT = TenantConfig(
     admin_agent=AdminAgentConfig(allowed_numbers=["59170000001"]),
 )
 
-
 def _ctx(role="public"):
     return ToolContext(tenant=TENANT, role=role, thread_id=f"t1:{role}:59170000002")
-
 
 # --------------------------------------------------------------------------
 # check_stock must not disguise a bad id as "sold out"
 # --------------------------------------------------------------------------
-
 
 def test_missing_product_is_reported_as_not_found(monkeypatch):
     async def raise_not_found(self, ctx, product_id):
@@ -73,7 +59,6 @@ def test_missing_product_is_reported_as_not_found(monkeypatch):
     assert result.found is False
     assert result.quantity == 0
 
-
 def test_real_product_with_no_stock_is_still_found(monkeypatch):
     """The whole point of `found`: zero stock and a bad id must differ."""
     async def zero_stock(self, ctx, product_id):
@@ -85,16 +70,13 @@ def test_real_product_with_no_stock_is_still_found(monkeypatch):
     assert result.found is True
     assert result.quantity == 0
 
-
 def test_check_stock_tells_the_model_what_found_means():
     """The flag only helps if the tool description explains it."""
     assert "found" in (check_stock.description or "")
 
-
 # --------------------------------------------------------------------------
 # The two anti-loop caps are tuned against each other by hand
 # --------------------------------------------------------------------------
-
 
 def test_tool_cap_fits_inside_the_graph_recursion_limit():
     """A specialist run of N tool calls costs 2N+1 supersteps.
@@ -110,21 +92,17 @@ def test_tool_cap_fits_inside_the_graph_recursion_limit():
         f"the recursion limit to at least {supersteps} or lower the tool cap."
     )
 
-
 def test_catalog_search_cap_is_tighter_than_the_general_cap():
     """The per-tool cap is only meaningful below the overall one."""
     assert MAX_CATALOG_SEARCHES_PER_RUN <= MAX_TOOL_CALLS_PER_RUN
-
 
 def test_closer_worst_case_still_fits():
     """search_catalog + check_stock + create_order."""
     assert MAX_TOOL_CALLS_PER_RUN >= 3
 
-
 # --------------------------------------------------------------------------
 # activity_log must not accumulate whole conversations
 # --------------------------------------------------------------------------
-
 
 def test_traced_text_is_truncated(monkeypatch):
     logged: dict = {}
@@ -149,7 +127,6 @@ def test_traced_text_is_truncated(monkeypatch):
     assert detail["input_chars"] == 5000
     assert detail["output_chars"] == 5000
 
-
 def test_short_text_is_left_intact(monkeypatch):
     logged: dict = {}
 
@@ -167,11 +144,9 @@ def test_short_text_is_left_intact(monkeypatch):
     assert logged["detail"]["input_text"] == "hola"
     assert logged["detail"]["output_text"] == "buenas"
 
-
 # --------------------------------------------------------------------------
 # One conversation, one turn at a time
 # --------------------------------------------------------------------------
-
 
 def test_same_thread_turns_do_not_overlap(monkeypatch):
     """Concurrent turns on one checkpoint mean one message silently vanishes."""
@@ -215,7 +190,6 @@ def test_same_thread_turns_do_not_overlap(monkeypatch):
     assert overlaps == 0, "two turns ran against the same checkpoint at once"
     assert bridge._thread_locks == {}, "lock dict leaked an entry"
 
-
 def test_bot_switch_still_accepts_the_historical_env_names(monkeypatch):
     """Renaming the switch must not silently disable the bot on live deploys.
 
@@ -247,7 +221,6 @@ def test_bot_switch_still_accepts_the_historical_env_names(monkeypatch):
             f"{legacy} no longer enables the bot"
         )
         monkeypatch.delenv(legacy)
-
 
 def test_different_threads_still_run_concurrently(monkeypatch):
     """The lock must be per conversation, not a global bottleneck."""

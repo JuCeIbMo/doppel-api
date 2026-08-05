@@ -18,7 +18,8 @@ uvicorn app.main:app --reload
 docker compose up
 ```
 
-**No hay conftest.py ni pytest.ini.** Cada archivo de test setea sus propias env vars con `os.environ.setdefault(...)` al inicio, antes del primer import de la app. El orden importa: las vars deben estar antes de `import app.*`.
+`tests/conftest.py` carga las variables de entorno seguras antes de importar la app. Los
+dobles compartidos viven en `tests/fakes/` y las pruebas HTTP se separan por dominio.
 
 ## Arquitectura
 
@@ -52,10 +53,11 @@ El bot vive dentro del proceso doppel-api (no es un microservicio separado). Flu
 
 ```
 POST /webhook/whatsapp
-  → _debounce_bot_response() [background task, Redis]
-    → _process_bot_response() [un turno por ráfaga]
+  → app/whatsapp/webhook.ingest_webhook()
+    → app/whatsapp/webhook.debounce_bot_response() [background task, Redis]
+      → app/whatsapp/turn.process_bot_response() [un turno por ráfaga]
     → app/ai_core/bridge.respond()     ← única puerta pública del subsistema AI
-      → build_public_agent() / build_admin_agent()   (cacheado por tenant+rol)
+      → public.build_public_agent() / admin.build_admin_agent()   (cacheado por tenant+rol)
         → await agent.ainvoke(...)
           → storefront.search_catalog / register_sale  (public)
           → ERP services directamente                  (admin)
@@ -73,8 +75,8 @@ entrega al modelo un coroutine sin ejecutar, en silencio.
 **`app/services/storefront.py`** es la capa que expone el ERP al agente vendedor. Devuelve shapes "lean" (solo lo que la IA necesita) y evita que el bot toque los ERP services directamente.
 
 El rol lo resuelve `resolve_role(user_phone, tenant)` por el número del remitente (verificado por Meta), nunca por el texto del mensaje:
-- `public` → un router LLM clasifica **cada turno** y despacha a un especialista (greeter/catalog/objection/closer) + `create_order`. Grafo único `START → classify_intent → route_dispatch → <especialista> → END`: sin routing pegajoso y **sin handoffs entre especialistas** (un especialista no puede saltar a otro; si tiene que cambiar, lo decide el router del turno siguiente). El `active_agent` del turno anterior sesga la clasificación hacia la continuidad, no la fuerza. Ver `docs/ai-core-pendientes.md`.
-- `admin` → tools ERP completas (reportes, stock, alta de productos, config)
+- `public` (`app/ai_core/public/`) → un router LLM clasifica **cada turno** y despacha a un especialista (greeter/catalog/objection/closer) + `create_order`. Grafo único `START → classify_intent → route_dispatch → <especialista> → END`: sin routing pegajoso y **sin handoffs entre especialistas** (un especialista no puede saltar a otro; si tiene que cambiar, lo decide el router del turno siguiente). El `active_agent` del turno anterior sesga la clasificación hacia la continuidad, no la fuerza. Ver `docs/ai-core-pendientes.md`.
+- `admin` (`app/ai_core/admin/`) → agente independiente. `tools.py` es el inventario explícito donde se agregan sus capacidades ERP; `prompt.md` es su contrato.
 
 ### Herramienta de imagen de producto (Gemini, separada del bot)
 
@@ -109,9 +111,9 @@ tool (send_image / send_reply_buttons / send_list_message)
   → ctx.outbox.add(SendImageAction(...))        app/ai_core/channel/actions.py
     → run_*_agent_turn devuelve `channel_actions`
       → bridge.respond -> TurnResult(text, actions)
-        → whatsapp_delivery.plan_delivery()      ordena y pliega texto+foto
-          → WhatsAppSender                        app/services/whatsapp_sender.py
-            → meta_api                            payloads de la Cloud API
+        → app/whatsapp/delivery.plan_delivery()  ordena y pliega texto+foto
+          → WhatsAppSender                        app/whatsapp/sender.py
+            → app/whatsapp/meta.py                payloads de la Cloud API
 ```
 
 **El outbox viaja por el `context=` run-scoped de LangGraph, no por `configurable`.**
@@ -128,7 +130,7 @@ LLM ni tokens: `app/ai_core/channel/courtesy.py`. El webhook las dispara **antes
 al modelo, para que el indicador esté visible mientras el LLM piensa. Son best-effort: un 400
 de Meta se loguea y sigue. Los envíos reales sí propagan.
 
-Los **taps** de botón/lista entran como `type: "interactive"`, los parsea `_parse_inbound` y
+Los **taps** de botón/lista entran como `type: "interactive"`, los parsea `parse_inbound` y
 `bridge` los traduce a `[El cliente tocó la opción "..." (id: ...)]` para el agente. Los ids
 que generamos nosotros llevan el prefijo `choice:` (`CHOICE_PREFIX`) para distinguirlos de
 los de una plantilla de Meta.
@@ -140,7 +142,7 @@ los de una plantilla de Meta.
 - **`bridge.respond` devuelve `TurnResult`** (`app/ai_core/channel/actions.py`), nunca `None`: `ok=False` = el agente crasheó (se loguea como ERROR), `text=""` con `ok=True` = respondió vacío legítimamente. El webhook no envía nada en ambos casos pero los diferencia en logs.
 - **Todo el I/O de Supabase se awaitea**: `await get_supabase().table(...)...execute()`, igual para `.auth.*` y `.storage.*`. Un `async def` NUNCA debe hacer I/O bloqueante — bloquea el event loop y con él todo el server. Si te olvidás un `await`, falla ruidoso (`.data` sobre un coroutine → `AttributeError`), no en silencio.
 - **La regla anterior vale para todo I/O, no sólo Supabase**, pero `tests/test_async_discipline.py` sólo audita el AST de las llamadas a Supabase. Los SDKs de terceros (Gemini, OpenAI, httpx) hay que revisarlos a mano: usá la variante async del cliente, o `asyncio.to_thread` si no hay.
-- **Los adjuntos de WhatsApp se borran al terminar el turno**: `_download_media_files` los baja a `/tmp/doppel-whatsapp-media/{tenant}/` y el `finally` de `_process_bot_response` llama a `_cleanup_media_files`, que los saca del disco por cualquier salida (incluidas las tempranas: bot apagado, cuenta no encontrada, agente caído). Nadie más los recolecta.
+- **Los adjuntos de WhatsApp se borran al terminar el turno**: `download_media_files` (`app/whatsapp/inbound.py`) los baja a `/tmp/doppel-whatsapp-media/{tenant}/` y el `finally` de `process_bot_response` (`app/whatsapp/turn.py`) llama a `cleanup_media_files`, que los saca del disco por cualquier salida (incluidas las tempranas: bot apagado, cuenta no encontrada, agente caído). Nadie más los recolecta.
 - **`log_activity` es best-effort**: nunca lanza excepciones — un fallo de audit log no debe romper la operación. Es `async`, hay que awaitearlo.
 
 ### Variables de entorno relevantes

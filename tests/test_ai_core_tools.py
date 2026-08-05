@@ -10,19 +10,8 @@ Covers the two ways the agent core can silently stop touching the ERP:
    `awrap_model_call`). LangChain raises NotImplementedError rather than falling
    back to the sync hook, so a sync-only middleware breaks `ainvoke` entirely.
 
-app.config instantiates Settings() at import time, requiring these env vars.
-Set safe test defaults before import.
+Shared test environment is loaded before collection by `tests/conftest.py`.
 """
-
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import asyncio
 import inspect
@@ -34,17 +23,15 @@ from langchain.agents.middleware import AgentMiddleware
 import app.ai_core.tools.catalog as catalog_tools
 import app.ai_core.tools.channel as channel_tools
 import app.ai_core.tools.sales as sales_tools
-from app.ai_core.agents.context_middleware import (
+from app.ai_core.common.middleware import (
     build_message_window,
     build_tool_context,
-)
-from app.ai_core.agents.guardrails import (
     build_tool_error_boundary,
     build_tool_guardrail,
+    specialist_middleware,
 )
 from app.ai_core.channel.outbox import TurnOutbox
 from app.ai_core.config.tenant import AdminAgentConfig, PublicAgentConfig, TenantConfig
-from app.ai_core.subagents._base import specialist_middleware
 from app.ai_core.tools import (
     add_product,
     check_stock,
@@ -73,17 +60,14 @@ TENANT = TenantConfig(
     admin_agent=AdminAgentConfig(allowed_numbers=["59170000001"]),
 )
 
-
 def _ctx(role="public"):
     return ToolContext(tenant=TENANT, role=role, thread_id=f"t1:{role}:59170000002")
-
 
 @pytest.mark.parametrize("tool", ALL_TOOLS, ids=lambda t: t.name)
 def test_async_tools_registered_as_coroutine(tool):
     """An async tool registered under `func=` would never be awaited."""
     assert tool.coroutine is not None, f"{tool.name} has no async implementation"
     assert tool.func is None, f"{tool.name} registered an async function as sync `func=`"
-
 
 def test_tool_returns_result_not_coroutine(monkeypatch):
     """The whole point: the model must receive data, not a coroutine object."""
@@ -100,12 +84,10 @@ def test_tool_returns_result_not_coroutine(monkeypatch):
     assert not inspect.iscoroutine(result), "tool returned an un-awaited coroutine"
     assert [p.model_dump()["name"] for p in result.items] == ["Agua"]
 
-
 def test_ctx_hidden_from_model_but_validated():
     """`ctx` is injected by middleware, so it must not be in the LLM's schema."""
     assert "ctx" not in search_catalog.get_input_schema().model_fields
     assert "ctx" in search_catalog.args_schema.model_fields
-
 
 @pytest.mark.parametrize(
     "middleware",
@@ -120,10 +102,8 @@ def test_tool_middleware_supports_async_path(middleware):
     """Sync-only middleware makes `ainvoke` raise NotImplementedError."""
     assert type(middleware).awrap_tool_call is not AgentMiddleware.awrap_tool_call
 
-
 def test_message_window_supports_async_path():
     assert type(build_message_window()).awrap_model_call is not AgentMiddleware.awrap_model_call
-
 
 def _trimmed(n_turns, max_messages=40):
     """Run the real middleware trim over a system prompt + n_turns exchanges."""
@@ -145,7 +125,6 @@ def _trimmed(n_turns, max_messages=40):
     build_message_window(max_messages)._trim(_Request())
     return captured["messages"]
 
-
 def test_system_prompt_survives_the_message_window():
     """The specialist must not lose its instructions in a long conversation."""
     from langchain_core.messages import SystemMessage
@@ -156,14 +135,12 @@ def test_system_prompt_survives_the_message_window():
     )
     assert isinstance(trimmed[0], SystemMessage), "system prompt must stay first"
 
-
 def test_message_window_still_bounds_the_prompt():
     """Pinning the system prompt must not let the context grow unbounded."""
     assert len(_trimmed(n_turns=30, max_messages=40)) <= 40
     assert len(_trimmed(n_turns=200, max_messages=40)) <= 40
     # A short conversation is left untouched.
     assert len(_trimmed(n_turns=3, max_messages=40)) == 7
-
 
 def test_specialist_middleware_stack_is_async_capable():
     """Every middleware bound to a specialist must survive the async path."""
@@ -178,23 +155,20 @@ def test_specialist_middleware_stack_is_async_capable():
         if sync_model:
             assert overrides_model, f"{cls.__name__} lacks awrap_model_call"
 
-
 def test_agent_entrypoints_are_async():
     """The webhook runs on the event loop; a sync turn would block the server."""
-    from app.ai_core.agents.admin_agent import build_admin_agent, run_admin_agent_turn
-    from app.ai_core.agents.public_agent import build_public_agent, run_public_agent_turn
+    from app.ai_core.admin import build_admin_agent, run_admin_agent_turn
+    from app.ai_core.public import build_public_agent, run_public_agent_turn
     from app.ai_core.persistence.checkpointer import open_checkpointer
 
     for fn in (build_admin_agent, run_admin_agent_turn,
                build_public_agent, run_public_agent_turn, open_checkpointer):
         assert inspect.iscoroutinefunction(fn), f"{fn.__name__} must be async"
 
-
 def test_role_permission_still_enforced():
     """Admin-only tools must reject the public role through the async path."""
     with pytest.raises(PermissionError):
         asyncio.run(get_sales_report.ainvoke({"ctx": _ctx("public")}))
-
 
 # --------------------------------------------------------------------------
 # create_order: idempotencia
@@ -213,10 +187,8 @@ def _tool_call_request(tool, configurable):
         runtime=SimpleNamespace(config={"configurable": configurable}),
     )
 
-
 def _order_ctx(turn_id="msg-1", thread_id="t1:public:59170000002"):
     return ToolContext(tenant=TENANT, role="public", thread_id=thread_id, turn_id=turn_id)
-
 
 def _capture_register_sale(monkeypatch, calls):
     async def fake_register_sale(ctx, items, customer_phone=None,
@@ -227,7 +199,6 @@ def _capture_register_sale(monkeypatch, calls):
 
     monkeypatch.setattr(sales_tools.storefront, "register_sale", fake_register_sale)
 
-
 def test_create_order_sends_an_idempotency_key(monkeypatch):
     calls = []
     _capture_register_sale(monkeypatch, calls)
@@ -236,7 +207,6 @@ def test_create_order_sends_an_idempotency_key(monkeypatch):
         {"items": [{"product_id": "p1", "quantity": 2}], "ctx": _order_ctx()}))
 
     assert calls[0], "create_order must send an idempotency key"
-
 
 def test_retry_within_the_same_turn_reuses_the_key(monkeypatch):
     """Este es el bug: el modelo llama dos veces y se registran dos ventas."""
@@ -252,7 +222,6 @@ def test_retry_within_the_same_turn_reuses_the_key(monkeypatch):
     assert first.duplicate is False
     assert second.duplicate is True, "the model must be told it was already placed"
 
-
 def test_item_order_does_not_change_the_key(monkeypatch):
     """El modelo puede listar los ítems al revés en el reintento; sigue siendo la misma orden."""
     calls = []
@@ -266,7 +235,6 @@ def test_item_order_does_not_change_the_key(monkeypatch):
 
     assert calls[0] == calls[1]
 
-
 def test_a_later_turn_is_a_new_sale(monkeypatch):
     """Comprar lo mismo de nuevo más tarde es una venta nueva, no un duplicado."""
     calls = []
@@ -277,7 +245,6 @@ def test_a_later_turn_is_a_new_sale(monkeypatch):
     asyncio.run(create_order.ainvoke({"items": items, "ctx": _order_ctx("msg-2")}))
 
     assert calls[0] != calls[1]
-
 
 def test_different_items_are_different_keys(monkeypatch):
     calls = []
@@ -291,7 +258,6 @@ def test_different_items_are_different_keys(monkeypatch):
 
     assert calls[0] != calls[1]
 
-
 def test_no_turn_id_means_no_key(monkeypatch):
     """Sin turno, una clave de thread+ítems se comería la recompra legítima del
     cliente. Perder una venta real es peor que el duplicado que esto evita."""
@@ -302,7 +268,6 @@ def test_no_turn_id_means_no_key(monkeypatch):
         {"items": [{"product_id": "p1", "quantity": 2}], "ctx": _order_ctx(turn_id="")}))
 
     assert calls == [None]
-
 
 def test_middleware_injects_the_turn_id():
     """La clave sale del turn_id; si el middleware no lo inyecta, no hay idempotencia."""
@@ -317,14 +282,12 @@ def test_middleware_injects_the_turn_id():
     assert ctx.turn_id == "wamid.ABC"
     assert ctx.thread_id == "t1:public:5917"
 
-
 # --- tools de canal ---------------------------------------------------------
 
 def _channel_ctx(role="public"):
     return ToolContext(
         tenant=TENANT, role=role, thread_id="t1:public:5917", outbox=TurnOutbox(),
     )
-
 
 def test_send_image_queues_the_resolved_url(monkeypatch):
     """El modelo pasa el product_id; la URL la resuelve el canal y nunca la ve."""
@@ -340,7 +303,6 @@ def test_send_image_queues_the_resolved_url(monkeypatch):
 
     assert result.ok
     assert [a.image_url for a in ctx.outbox.actions] == ["https://cdn/p1.webp"]
-
 
 def test_send_image_without_a_photo_is_not_an_error(monkeypatch):
     """Que un producto no tenga foto es normal: el agente lo describe en palabras."""
@@ -385,7 +347,6 @@ def test_send_reply_buttons_namespaces_the_ids():
     assert ctx.outbox.actions[0].buttons[0].id == "choice:cash"
     assert ctx.outbox.actions[0].buttons[0].title == "Efectivo"
 
-
 def test_send_list_message_over_ten_rows_tells_the_model_why():
     """Recortar en silencio descartaría una opción que el modelo quiso ofrecer."""
     ctx = _channel_ctx()
@@ -401,7 +362,6 @@ def test_send_list_message_over_ten_rows_tells_the_model_why():
     assert not result.ok
     assert "10 rows in total" in result.reason
     assert ctx.outbox.actions == []
-
 
 @pytest.mark.parametrize(
     "tool, args",

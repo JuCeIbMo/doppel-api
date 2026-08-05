@@ -12,19 +12,8 @@ after one dropped Postgres connection.
    into a permanent outage, invisible to the customer because `respond` returns
    `None` and the webhook then sends nothing.
 
-app.config instantiates Settings() at import time, requiring these env vars.
-Set safe test defaults before import.
+Shared test environment is loaded before collection by `tests/conftest.py`.
 """
-
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import asyncio
 import inspect
@@ -36,7 +25,6 @@ from app.ai_core import bridge
 from app.ai_core.config.tenant import AdminAgentConfig, PublicAgentConfig, TenantConfig
 from app.ai_core.persistence import checkpointer as cp
 
-
 def _tenant(tenant_id: str = "t1") -> TenantConfig:
     return TenantConfig(
         tenant_id=tenant_id,
@@ -45,11 +33,9 @@ def _tenant(tenant_id: str = "t1") -> TenantConfig:
         admin_agent=AdminAgentConfig(allowed_numbers=["59170000001"]),
     )
 
-
 # --------------------------------------------------------------------------
 # 1. The checkpointer must sit on a pool, not a bare connection
 # --------------------------------------------------------------------------
-
 
 def test_checkpointer_uses_a_shared_pool(monkeypatch):
     """A bare AsyncConnection never reconnects; only a pool self-heals."""
@@ -94,7 +80,6 @@ def test_checkpointer_uses_a_shared_pool(monkeypatch):
     assert saver_conns[0] is saver_conns[1], "savers must share the same pool"
     assert isinstance(saver_conns[0], FakePool)
 
-
 def test_pool_validates_connections_before_handing_them_out(monkeypatch):
     """Without `check`, a stale connection is still served once and that turn dies."""
     captured: dict = {}
@@ -119,7 +104,6 @@ def test_pool_validates_connections_before_handing_them_out(monkeypatch):
     assert captured["kwargs"]["autocommit"] is True
     assert captured["kwargs"]["prepare_threshold"] == 0
     assert captured["max_size"] == cp.MAX_POOL_SIZE
-
 
 def test_setup_runs_once_per_process(monkeypatch):
     """`.setup()` is idempotent but costs a round trip on every agent build."""
@@ -154,7 +138,6 @@ def test_setup_runs_once_per_process(monkeypatch):
     asyncio.run(scenario())
     assert setups == 1
 
-
 def test_close_pool_is_async_and_resets_state(monkeypatch):
     """The lifespan must be able to release the pool on shutdown."""
     assert inspect.iscoroutinefunction(cp.close_pool)
@@ -177,7 +160,6 @@ def test_close_pool_is_async_and_resets_state(monkeypatch):
     assert cp._pool is None
     assert cp._setup_done is False
 
-
 def test_lifespan_closes_the_pool():
     """A pool left open on shutdown leaks server-side Postgres connections."""
     import app.main as main
@@ -185,11 +167,9 @@ def test_lifespan_closes_the_pool():
     source = inspect.getsource(main.lifespan)
     assert "close_pool" in source, "app lifespan never releases the checkpointer pool"
 
-
 # --------------------------------------------------------------------------
 # 2. A failed turn must not poison the cache forever
 # --------------------------------------------------------------------------
-
 
 def test_failed_turn_evicts_the_cached_agent(monkeypatch):
     """The whole point: a broken agent must not survive into the next message."""
@@ -231,7 +211,6 @@ def test_failed_turn_evicts_the_cached_agent(monkeypatch):
     assert builds == 2, "the broken agent stayed cached after the failure"
     assert bridge._agents == {}
 
-
 def test_successful_turn_keeps_the_agent_cached(monkeypatch):
     """Eviction must not turn the cache into a per-message rebuild."""
     tenant = _tenant()
@@ -266,7 +245,6 @@ def test_successful_turn_keeps_the_agent_cached(monkeypatch):
     assert [reply.text for reply in asyncio.run(scenario())] == ["listo", "listo"]
     assert builds == 1
 
-
 def test_config_change_rebuilds_the_agent(monkeypatch):
     """Otherwise a bot_configs edit never reaches a running process."""
     builds: list[str] = []
@@ -291,7 +269,6 @@ def test_config_change_rebuilds_the_agent(monkeypatch):
     assert builds == ["Kiosco", "Kiosco Nuevo"]
     assert len(bridge._agents) == 1, "the rebuild must replace, not duplicate"
 
-
 def test_tool_allowlist_change_rebuilds_the_agent(monkeypatch):
     """The fingerprint must cover what is bound, not just the display name."""
     builds = 0
@@ -313,7 +290,6 @@ def test_tool_allowlist_change_rebuilds_the_agent(monkeypatch):
 
     asyncio.run(scenario())
     assert builds == 2
-
 
 def test_agent_cache_is_bounded(monkeypatch):
     """An unbounded cache grows one agent per tenant for the life of the process."""

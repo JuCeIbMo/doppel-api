@@ -13,7 +13,7 @@ Política de límites, deliberadamente asimétrica:
 - **Longitudes → se truncan** (títulos, descripciones, body). Un título de 22
   caracteres no pierde significado, y rechazarlo costaría un turno de LLM entero.
 
-Esta es la capa autoritativa de validación. `app/services/meta_api.py` vuelve a
+Esta es la capa autoritativa de validación. `app/whatsapp/meta.py` vuelve a
 recortar por su cuenta porque también lo llaman rutas que no pasan por el agente.
 """
 

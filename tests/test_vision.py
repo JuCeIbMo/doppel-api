@@ -1,26 +1,16 @@
 """Tests del análisis de imágenes con Gemini (autodescripción/etiquetado).
 
-Sin red: se mockea el cliente genai. app.config se instancia al importar.
+Sin red: se mockea el cliente genai.; `tests/conftest.py` carga la configuración.
 """
 
 import asyncio
 import json
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
 
 from app.services import vision
-
 
 class _FakeResponse:
     def __init__(self, text):
         self.text = text
-
 
 class _FakeModels:
     def __init__(self, text=None, exc=None):
@@ -34,11 +24,9 @@ class _FakeModels:
             raise self._exc
         return _FakeResponse(self._text)
 
-
 class _FakeAio:
     def __init__(self, models):
         self.models = models
-
 
 class _FakeClient:
     """El código llama `client.aio.models.generate_content`, la variante async del
@@ -48,10 +36,8 @@ class _FakeClient:
     def __init__(self, models):
         self.aio = _FakeAio(models)
 
-
 def _analyze(*args, **kwargs):
     return asyncio.run(vision.analyze_product_image(*args, **kwargs))
-
 
 def test_analyze_happy_path(monkeypatch):
     payload = {"name": "Coca-Cola 500ml", "description": "Gaseosa cola bien fría.",
@@ -67,7 +53,6 @@ def test_analyze_happy_path(monkeypatch):
     assert result["description"] == "Gaseosa cola bien fría."
     assert result["tags"] == ["bebida", "gaseosa", "cola"]
 
-
 def test_analyze_without_key_skips_network(monkeypatch):
     monkeypatch.setattr(vision.settings, "GEMINI_API_KEY", "")
 
@@ -79,7 +64,6 @@ def test_analyze_without_key_skips_network(monkeypatch):
 
     assert result == {"ai_ok": False, "name": None, "description": None, "tags": []}
 
-
 def test_analyze_handles_gemini_failure(monkeypatch):
     models = _FakeModels(exc=RuntimeError("gemini down"))
     monkeypatch.setattr(vision.settings, "GEMINI_API_KEY", "k")
@@ -89,7 +73,6 @@ def test_analyze_handles_gemini_failure(monkeypatch):
     assert result["ai_ok"] is False
     assert result["tags"] == []
 
-
 def test_analyze_handles_malformed_json(monkeypatch):
     models = _FakeModels(text="no soy json {")
     monkeypatch.setattr(vision.settings, "GEMINI_API_KEY", "k")
@@ -97,7 +80,6 @@ def test_analyze_handles_malformed_json(monkeypatch):
 
     result = _analyze(b"img", "image/webp")
     assert result["ai_ok"] is False
-
 
 def test_analyze_normalizes_tags(monkeypatch):
     payload = {"name": "X", "description": "y",

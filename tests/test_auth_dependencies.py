@@ -11,11 +11,9 @@ from app.main import app
 
 client = TestClient(app)
 
-
 def test_missing_bearer_returns_401_not_403():
     r = client.get("/erp/inventory/low-stock")
     assert r.status_code == 401
-
 
 def test_malformed_authorization_scheme_returns_401():
     r = client.get(

@@ -30,10 +30,8 @@ AUTH_STORAGE_CALLS = {
     "verify_otp", "refresh_session", "sign_out",
 }
 
-
 def _python_files():
     return sorted(APP.rglob("*.py"))
-
 
 def _supabase_calls(path):
     """Yield (node, parents, enclosing_func, source) for each Supabase I/O call."""
@@ -67,7 +65,6 @@ def _supabase_calls(path):
                 break
         yield node, parents, enclosing, src
 
-
 @pytest.mark.parametrize("path", _python_files(), ids=lambda p: str(p.name))
 def test_supabase_calls_are_awaited(path):
     offenders = [
@@ -77,7 +74,6 @@ def test_supabase_calls_are_awaited(path):
     ]
     assert not offenders, "Supabase I/O without `await`:\n" + "\n".join(offenders)
 
-
 @pytest.mark.parametrize("path", _python_files(), ids=lambda p: str(p.name))
 def test_supabase_calls_are_not_in_sync_functions(path):
     offenders = [
@@ -86,7 +82,6 @@ def test_supabase_calls_are_not_in_sync_functions(path):
         if isinstance(enclosing, ast.FunctionDef)
     ]
     assert not offenders, "Supabase I/O in a sync function:\n" + "\n".join(offenders)
-
 
 def test_guard_actually_sees_the_calls():
     """A guard that matches nothing would pass forever; make sure it has teeth."""

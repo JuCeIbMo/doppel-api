@@ -1,18 +1,8 @@
 """Tests de subida de imágenes a Supabase Storage."""
 
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-
 import asyncio
 
 from app.services import storage
-
 
 class _FakeBucket:
     def __init__(self):
@@ -40,11 +30,9 @@ class _FakeStorage:
         self.from_arg = name
         return self._bucket
 
-
 class _FakeSupabase:
     def __init__(self, storage_obj):
         self.storage = storage_obj
-
 
 def test_upload_returns_public_url(monkeypatch):
     bucket = _FakeBucket()
@@ -61,7 +49,6 @@ def test_upload_returns_public_url(monkeypatch):
     }
     # La URL pública se pide sobre el mismo path que se subió.
     assert bucket.public_arg == bucket.uploaded["path"]
-
 
 def test_upload_uses_configured_bucket(monkeypatch):
     fake_storage = _FakeStorage(_FakeBucket())

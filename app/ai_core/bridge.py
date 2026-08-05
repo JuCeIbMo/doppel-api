@@ -22,8 +22,8 @@ import json
 import logging
 from contextlib import asynccontextmanager
 
-from app.ai_core.agents.admin_agent import build_admin_agent, run_admin_agent_turn
-from app.ai_core.agents.public_agent import build_public_agent, run_public_agent_turn
+from app.ai_core.admin import build_admin_agent, run_admin_agent_turn
+from app.ai_core.public import build_public_agent, run_public_agent_turn
 from app.ai_core.channel.actions import TurnResult
 from app.ai_core.channel.inbound import InteractiveReply
 from app.ai_core.config.loader import load_tenant_config

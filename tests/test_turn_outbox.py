@@ -9,19 +9,8 @@ texto y ninguna foto, sin un solo error en los logs.
 Por eso este test arma el sándwich real (StateGraph padre + create_agent +
 ToolContextMiddleware + @contextual_tool) en vez de mockear el runtime.
 
-app.config instantiates Settings() at import time, requiring these env vars.
-Set safe test defaults before import.
+Shared test environment is loaded before collection by `tests/conftest.py`.
 """
-
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import asyncio
 
@@ -32,7 +21,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.types import Command
 
-from app.ai_core.agents.context_middleware import build_tool_context
+from app.ai_core.common.middleware import build_tool_context
 from app.ai_core.channel.actions import SendTextAction
 from app.ai_core.channel.outbox import TurnOutbox, TurnRuntime
 from app.ai_core.config.tenant import AdminAgentConfig, PublicAgentConfig, TenantConfig
@@ -45,7 +34,6 @@ TENANT = TenantConfig(
     admin_agent=AdminAgentConfig(),
 )
 
-
 @contextual_tool
 async def queue_probe(note: str, ctx: ToolContext) -> str:
     """Encola una acción de canal. Sonda del test, no es una tool de negocio."""
@@ -53,7 +41,6 @@ async def queue_probe(note: str, ctx: ToolContext) -> str:
         return "no-outbox"
     ctx.outbox.add(SendTextAction(body=note))
     return "queued"
-
 
 class ToolThenAnswerModel(BaseChatModel):
     """Pide `queue_probe` una vez y después contesta. Sin red."""
@@ -83,7 +70,6 @@ class ToolThenAnswerModel(BaseChatModel):
     def bind_tools(self, tools, **kwargs):
         return self
 
-
 def _build_graph():
     """Especialista dentro de un StateGraph padre: la topología real del swarm."""
     specialist = create_agent(
@@ -104,7 +90,6 @@ def _build_graph():
     builder.add_edge(START, "entry")
     return builder.compile(checkpointer=InMemorySaver())
 
-
 def _run(graph, runtime: TurnRuntime, thread_id: str, text: str):
     return asyncio.run(
         graph.ainvoke(
@@ -114,7 +99,6 @@ def _run(graph, runtime: TurnRuntime, thread_id: str, text: str):
         )
     )
 
-
 def test_a_tool_inside_a_subgraph_reaches_the_callers_outbox():
     """El corazón del diseño: el append de la tool lo ve quien invocó el grafo."""
     graph = _build_graph()
@@ -123,7 +107,6 @@ def test_a_tool_inside_a_subgraph_reaches_the_callers_outbox():
     _run(graph, runtime, "thread-a", "hola")
 
     assert [action.body for action in runtime.outbox.actions] == ["ping"]
-
 
 def test_each_turn_starts_with_an_empty_outbox():
     """Un TurnRuntime nuevo por turno es lo que impide que se filtre entre clientes."""
@@ -136,7 +119,6 @@ def test_each_turn_starts_with_an_empty_outbox():
 
     assert len(first.outbox.actions) == 1
     assert len(second.outbox.actions) == 1
-
 
 def test_the_outbox_never_reaches_the_checkpoint():
     """El checkpoint es durable: un objeto no serializable lo rompería."""
@@ -158,7 +140,6 @@ def test_the_outbox_never_reaches_the_checkpoint():
     for value in snapshot.metadata.values():
         assert isinstance(value, (str, int, float, bool, dict, type(None))), value
 
-
 def test_turn_runtime_is_truthy_when_empty():
     """`Runtime.merge` hace `other.context or self.context`.
 
@@ -168,7 +149,6 @@ def test_turn_runtime_is_truthy_when_empty():
     """
     assert bool(TurnRuntime())
     assert bool(TurnRuntime(outbox=TurnOutbox()))
-
 
 def test_drain_empties_the_buffer():
     outbox = TurnOutbox()

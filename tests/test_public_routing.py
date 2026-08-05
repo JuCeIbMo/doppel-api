@@ -17,19 +17,8 @@ cliente de vuelta al catálogo), y el fallback es lo que impide que un proveedor
 caído deje **cualquier** mensaje sin respuesta (`bridge.respond` contesta un turno
 fallido con silencio).
 
-app.config instantiates Settings() at import time, requiring these env vars.
-Set safe test defaults before import.
+Shared test environment is loaded before collection by `tests/conftest.py`.
 """
-
-import os
-
-os.environ.setdefault("META_APP_ID", "test-app-id")
-os.environ.setdefault("META_APP_SECRET", "test-app-secret")
-os.environ.setdefault("META_VERIFY_TOKEN", "test-verify-token")
-os.environ.setdefault("SUPABASE_URL", "http://localhost")
-os.environ.setdefault("SUPABASE_SERVICE_KEY", "x.eyJyb2xlIjogInNlcnZpY2Vfcm9sZSJ9.y")
-os.environ.setdefault("ENCRYPTION_KEY", "oZRrOD525wcQ0CJveupENSX1tDwKfP6e1XrDGn9P1Kw=")
-os.environ.setdefault("CHAT_DB_URL", "postgresql://ai:ai@localhost:5532/chat")
 
 import asyncio
 
@@ -40,12 +29,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 
-import app.ai_core.agents.public_agent as public_agent_module
-import app.ai_core.agents.router as router_module
-from app.ai_core.agents.public_agent import build_public_agent, run_public_agent_turn
-from app.ai_core.agents.router import ROUTER_MAX_ATTEMPTS, classify_intent
+import app.ai_core.public.agent as public_agent_module
+import app.ai_core.public.router as router_module
+from app.ai_core.public.agent import build_public_agent, run_public_agent_turn
+from app.ai_core.public.router import ROUTER_MAX_ATTEMPTS, classify_intent
 from app.ai_core.config.tenant import AdminAgentConfig, PublicAgentConfig, TenantConfig
-
 
 def _tenant(**public_overrides) -> TenantConfig:
     return TenantConfig(
@@ -54,7 +42,6 @@ def _tenant(**public_overrides) -> TenantConfig:
         public_agent=PublicAgentConfig(**public_overrides),
         admin_agent=AdminAgentConfig(),
     )
-
 
 class _FakeClassifier:
     """Reemplaza al nodo router: devuelve intents de a uno, sin red."""
@@ -67,7 +54,6 @@ class _FakeClassifier:
         index = min(self.calls, len(self.selections) - 1)
         self.calls += 1
         return {"intent": self.selections[index], "confidence": 1.0}
-
 
 class _ResponderModel(BaseChatModel):
     """Contesta con su propia etiqueta, así el test sabe quién atendió el turno."""
@@ -93,7 +79,6 @@ class _ResponderModel(BaseChatModel):
     def bind_tools(self, tools, **kwargs):
         return self
 
-
 @pytest.fixture(autouse=True)
 def _offline(monkeypatch):
     """Sin Postgres y sin Supabase: checkpoint en memoria y tracing mudo."""
@@ -107,7 +92,6 @@ def _offline(monkeypatch):
     monkeypatch.setattr(public_agent_module, "open_checkpointer", _in_memory)
     monkeypatch.setattr(public_agent_module, "trace_turn", _no_trace)
 
-
 def _patch_specialists(monkeypatch, models: dict):
     builders = {}
     for name in public_agent_module._SPECIALIST_BUILDERS:
@@ -118,22 +102,18 @@ def _patch_specialists(monkeypatch, models: dict):
         builders[name] = build
     monkeypatch.setattr(public_agent_module, "_SPECIALIST_BUILDERS", builders)
 
-
 def _responders() -> dict:
     return {
         name: _ResponderModel(label=name)
         for name in public_agent_module._SPECIALIST_BUILDERS
     }
 
-
 def _turn(agent, tenant, thread_id, text):
     return asyncio.run(run_public_agent_turn(agent, tenant, thread_id, text))
-
 
 # --------------------------------------------------------------------------
 # El router corre en cada turno
 # --------------------------------------------------------------------------
-
 
 def test_router_runs_on_every_turn_and_can_switch_specialist(monkeypatch):
     tenant = _tenant()
@@ -155,7 +135,6 @@ def test_router_runs_on_every_turn_and_can_switch_specialist(monkeypatch):
     assert models["catalog"].calls == 1
     assert models["closer"].calls == 1
 
-
 def test_disabled_router_target_falls_back_to_first_enabled_specialist(monkeypatch):
     tenant = _tenant(allowed_subagents=["catalog", "closer"])
     monkeypatch.setattr(
@@ -168,7 +147,6 @@ def test_disabled_router_target_falls_back_to_first_enabled_specialist(monkeypat
 
     assert result["active_agent"] == "catalog"
     assert result["messages"][-1].content == "catalog response"
-
 
 def test_full_history_is_checkpointed(monkeypatch):
     """Sacar el routing pegajoso no puede costar la persistencia del historial."""
@@ -186,11 +164,9 @@ def test_full_history_is_checkpointed(monkeypatch):
 
     assert len(state.values["messages"]) == 4
 
-
 # --------------------------------------------------------------------------
 # El nodo router: sesgo de continuidad y fallback
 # --------------------------------------------------------------------------
-
 
 class _RecordingClassifierModel:
     """Devuelve un intent fijo y guarda los prompts que recibió."""
@@ -208,7 +184,6 @@ class _RecordingClassifierModel:
             intent=self.intent, confidence=1.0, reason="test"
         )
 
-
 class _FailingClassifierModel:
     def __init__(self):
         self.attempts = 0
@@ -220,10 +195,8 @@ class _FailingClassifierModel:
         self.attempts += 1
         raise RuntimeError("provider down")
 
-
 def _system_texts(prompts) -> str:
     return "\n".join(m.content for m in prompts if isinstance(m, SystemMessage))
-
 
 def test_router_prompt_carries_the_previous_specialist(monkeypatch):
     """El sesgo: sin él, un aside en medio del cierre reclasifica a catalog."""
@@ -238,7 +211,6 @@ def test_router_prompt_carries_the_previous_specialist(monkeypatch):
 
     assert "currently handling" not in _system_texts(model.seen[0])
     assert "closer" in _system_texts(model.seen[1])
-
 
 def test_router_never_sends_an_unanswered_tool_call(monkeypatch):
     """Un turno con tools no puede envenenar la clasificación del turno siguiente.
@@ -270,7 +242,6 @@ def test_router_never_sends_an_unanswered_tool_call(monkeypatch):
     # El texto del asistente sobrevive: es contexto útil para clasificar.
     assert any("Busco en el catálogo" == m.content for m in sent)
 
-
 def test_classifier_failure_keeps_the_previous_specialist(monkeypatch):
     """Un proveedor caído no puede dejar el turno sin respuesta.
 
@@ -288,7 +259,6 @@ def test_classifier_failure_keeps_the_previous_specialist(monkeypatch):
 
     assert model.attempts == ROUTER_MAX_ATTEMPTS
     assert result == {"intent": None, "confidence": None}
-
 
 def test_failed_classification_dispatches_to_the_previous_specialist(monkeypatch):
     """`intent=None` recorre el grafo entero y sale por el especialista anterior."""
