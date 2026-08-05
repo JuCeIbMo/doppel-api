@@ -18,6 +18,7 @@ import asyncio
 
 import app.services.storefront as storefront
 from app.services.erp.context import ERPContext
+from app.services.erp.products import ProductsService
 
 CTX = ERPContext(tenant_id="t1", actor="whatsapp_bot", actor_label="Bot WhatsApp")
 
@@ -60,21 +61,19 @@ def test_business_info_empty_returns_blanks(monkeypatch):
 
 
 def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
-    async def fake_list(self, ctx, *, category=None, search=None, available=None, limit=50, offset=0):
+    async def fake_search(self, ctx, query, *, limit=50, offset=0):
         assert ctx.tenant_id == "t1"
-        assert available is True, "search_catalog debe pasar available=True al service"
-        all_rows = [
+        assert query == "bebida cola"
+        assert (limit, offset) == (21, 0)
+        return [
             {"id": "p1", "name": "Coca 500ml", "price": 1.2, "available": True, "stock": 5,
              "description": "Gaseosa cola", "tags": ["bebida", "gaseosa"]},
             {"id": "p2", "name": "Agua", "price": 0.8, "available": True, "stock": 0},
-            {"id": "p3", "name": "Oculto", "price": 9.0, "available": False, "stock": 3},
         ]
-        # Emulate DB-level filter when available=True
-        if available is True:
-            return [r for r in all_rows if r["available"]]
-        return all_rows
-    monkeypatch.setattr("app.services.storefront.ProductsService.list", fake_list)
-    result = asyncio.run(storefront.search_catalog(CTX, query="a"))
+    monkeypatch.setattr(
+        "app.services.storefront.ProductsService.search_available", fake_search
+    )
+    result = asyncio.run(storefront.search_catalog(CTX, query="  bebida cola  "))
     # Enriquecido con description+tags para que el vendedor matchee; faltantes -> "" / [].
     assert result == {
         "items": [
@@ -86,6 +85,90 @@ def test_search_catalog_lean_and_filters_unavailable(monkeypatch):
         "page": 0,
         "has_more": False,
     }
+
+
+def test_search_catalog_without_query_keeps_alphabetical_listing(monkeypatch):
+    captured = {}
+
+    async def fake_list(
+        self, ctx, *, category=None, search=None, available=None, limit=50, offset=0
+    ):
+        captured.update(
+            search=search, available=available, limit=limit, offset=offset
+        )
+        return []
+
+    async def unexpected_search(*_args, **_kwargs):
+        raise AssertionError("whitespace-only query must not call the search RPC")
+
+    monkeypatch.setattr("app.services.storefront.ProductsService.list", fake_list)
+    monkeypatch.setattr(
+        "app.services.storefront.ProductsService.search_available", unexpected_search
+    )
+
+    result = asyncio.run(storefront.search_catalog(CTX, query="   "))
+
+    assert result == {"items": [], "page": 0, "has_more": False}
+    assert captured == {"search": None, "available": True, "limit": 21, "offset": 0}
+
+
+def test_products_search_rpc_is_tenant_scoped_and_preserves_rank_order(monkeypatch):
+    captured = {}
+
+    class Query:
+        def select(self, fields):
+            assert fields == "product_id, quantity"
+            return self
+
+        def eq(self, field, value):
+            assert (field, value) == ("tenant_id", "t1")
+            return self
+
+        def in_(self, field, values):
+            assert (field, values) == ("product_id", ["p2", "p1"])
+            return self
+
+        async def execute(self):
+            return type("Result", (), {"data": [
+                {"product_id": "p1", "quantity": 3},
+                {"product_id": "p2", "quantity": 0},
+            ]})()
+
+    class RPC:
+        async def execute(self):
+            return type("Result", (), {"data": [
+                {"id": "p2", "name": "Segundo", "search_rank": 0.9},
+                {"id": "p1", "name": "Primero", "search_rank": 0.5},
+            ]})()
+
+    class Supabase:
+        def rpc(self, name, params):
+            captured.update(name=name, params=params)
+            return RPC()
+
+        def table(self, name):
+            assert name == "inventory"
+            return Query()
+
+    monkeypatch.setattr("app.services.erp.products.get_supabase", lambda: Supabase())
+
+    rows = asyncio.run(
+        ProductsService().search_available(
+            CTX, "bebida cola pequeña", limit=21, offset=40
+        )
+    )
+
+    assert captured == {
+        "name": "search_products_catalog",
+        "params": {
+            "p_tenant_id": "t1",
+            "p_query": "bebida cola pequeña",
+            "p_limit": 21,
+            "p_offset": 40,
+        },
+    }
+    assert [row["id"] for row in rows] == ["p2", "p1"]
+    assert [row["stock"] for row in rows] == [0, 3.0]
 
 
 def test_search_catalog_paginates(monkeypatch):

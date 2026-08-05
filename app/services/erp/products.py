@@ -38,6 +38,35 @@ async def _stock_map(tenant_id: str, product_ids: list[str]) -> dict[str, float]
 
 
 class ProductsService:
+    async def search_available(
+        self,
+        ctx: ERPContext,
+        query: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict]:
+        """Search available products across name, description and tags.
+
+        Ranking and tenant isolation live in the Postgres RPC created by
+        ``migration_v11_product_search.sql``. The result order must be kept: it
+        is relevance order, not the alphabetical order used by ``list``.
+        """
+        result = await get_supabase().rpc(
+            "search_products_catalog",
+            {
+                "p_tenant_id": ctx.tenant_id,
+                "p_query": query,
+                "p_limit": limit,
+                "p_offset": offset,
+            },
+        ).execute()
+        rows = result.data or []
+        stock = await _stock_map(ctx.tenant_id, [row["id"] for row in rows])
+        for row in rows:
+            row["stock"] = stock.get(row["id"], 0)
+        return rows
+
     async def list(
         self, ctx: ERPContext, *, category: str | None = None, search: str | None = None,
         available: bool | None = None, limit: int = 50, offset: int = 0,

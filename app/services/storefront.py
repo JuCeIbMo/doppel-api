@@ -40,9 +40,22 @@ async def search_catalog(ctx: ERPContext, query: str | None = None, page: int = 
     Pide `page_size + 1` filas para saber si hay más sin una query de COUNT
     aparte, y recorta la fila de sobra antes de devolver."""
     offset = page * CATALOG_PAGE_SIZE
-    rows = await ProductsService().list(
-        ctx, search=query, available=True, limit=CATALOG_PAGE_SIZE + 1, offset=offset,
-    )
+    service = ProductsService()
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        rows = await service.search_available(
+            ctx,
+            normalized_query,
+            limit=CATALOG_PAGE_SIZE + 1,
+            offset=offset,
+        )
+    else:
+        rows = await service.list(
+            ctx,
+            available=True,
+            limit=CATALOG_PAGE_SIZE + 1,
+            offset=offset,
+        )
     has_more = len(rows) > CATALOG_PAGE_SIZE
     rows = rows[:CATALOG_PAGE_SIZE]
     items = [

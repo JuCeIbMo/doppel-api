@@ -93,6 +93,10 @@ Esto usa Gemini a propósito y vive fuera de `app/ai/` (que es el bot Claude/Ope
 matchee mejor las consultas de los clientes. **No incluye `image_url` a propósito**: si el
 modelo ve la URL la pega en el texto de la respuesta. La foto se manda con la tool
 `send_image`, que resuelve la URL por `product_id` vía `storefront.get_product_image`.
+Cuando recibe `query`, usa la RPC `search_products_catalog` de
+`migration_v11_product_search.sql`: full-text en español sobre nombre + tags + descripción,
+con ranking ponderado y filtros de `tenant_id`/`available` dentro de PostgreSQL. Sin `query`
+mantiene el listado alfabético paginado.
 
 ### Capacidades de canal (foto, botones, listas)
 

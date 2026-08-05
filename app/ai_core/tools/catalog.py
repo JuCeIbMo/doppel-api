@@ -23,9 +23,12 @@ def _erp_ctx(ctx: ToolContext):
 
 @contextual_tool
 async def search_catalog(query: str | None, ctx: ToolContext, page: int = 0) -> CatalogPage:
-    """Search the product catalog by name. Omit `query` to list everything available.
+    """Search available products by name, description and tags.
 
-    Results are paginated (10 per page). If the response has `has_more: true`,
+    Omit `query` to list everything available. Search terms are normalized for
+    Spanish and ranked by relevance, with product names weighted highest.
+
+    Results are paginated (20 per page). If the response has `has_more: true`,
     call this again with `page` incremented by 1 to see more — do not assume
     the first page is the whole catalog."""
     if ctx.role not in {"public", "admin"}:
