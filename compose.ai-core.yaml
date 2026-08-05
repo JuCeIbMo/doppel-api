@@ -14,34 +14,29 @@ services:
     env_file:
       - .env
     environment:
-      # El agente LangGraph corre dentro de doppel-api y guarda checkpoints de
-      # conversación (historial de mensajes) aquí. El host es el nombre del
-      # servicio Postgres de abajo (no localhost).
-      CHAT_DB_URL: postgresql://ai:ai@chat-postgres:5432/chat
+      # El checkpointer oficial de LangGraph usa RedisJSON + RediSearch.
+      REDIS_URL: redis://langgraph-redis:6379/0
       # Flag de "bot activado": cualquier valor no vacío activa el bot.
       AI_CORE_URL: enabled
     depends_on:
-      chat-postgres:
+      langgraph-redis:
         condition: service_healthy
     ports:
       - "8000:8000"
     restart: unless-stopped
 
-  chat-postgres:
-    image: pgvector/pgvector:pg17
-    container_name: chat-postgres
-    environment:
-      POSTGRES_DB: chat
-      POSTGRES_USER: ai
-      POSTGRES_PASSWORD: ai
+  langgraph-redis:
+    image: redis:8.0
+    container_name: langgraph-redis
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - chat-postgres-data:/var/lib/postgresql/data
+      - langgraph-redis-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ai -d chat"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
 volumes:
-  chat-postgres-data:
+  langgraph-redis-data:

@@ -14,7 +14,7 @@ python3 -m pytest tests/test_storefront.py::test_register_sale_happy_path -v
 # Arrancar el servidor localmente (requiere .env)
 uvicorn app.main:app --reload
 
-# Arrancar con Docker Compose (incluye el Postgres del checkpointer, chat-postgres)
+# Arrancar con Docker Compose (incluye Redis del checkpointer de LangGraph)
 docker compose up
 ```
 
@@ -27,7 +27,7 @@ docker compose up
 ### Dos bases de datos
 
 - **Supabase** (Postgres gestionado): datos del ERP — productos, ventas, clientes, cuentas de WhatsApp, configuración del bot. El cliente es **async** (`AsyncClient` de `supabase-py`). Todos los services llaman `get_supabase()` (singleton en `app/services/supabase_client.py`) y **awaitean** el `.execute()`.
-- **Chat Postgres** (container propio, `CHAT_DB_URL`): historial de conversaciones del bot. Lo gestiona LangGraph vía `AsyncPostgresSaver` (`app/ai_core/persistence/checkpointer.py`).
+- **LangGraph Redis** (container propio, `REDIS_URL`): checkpoints e historial de conversación del bot. Lo gestiona LangGraph vía `AsyncRedisSaver` (`app/ai_core/persistence/checkpointer.py`). Redis 8 aporta RedisJSON y RediSearch, requeridos por la integración oficial.
 
 ### Capa ERP
 
@@ -58,7 +58,7 @@ POST /webhook/whatsapp
 **Todo el camino es async.** LangChain no hace fallback de async a sync: si un middleware
 define sólo `wrap_tool_call` y el grafo corre con `ainvoke`, lanza `NotImplementedError`.
 Cada middleware debe implementar **ambos** hooks (`wrap_*` y `awrap_*`), y el checkpointer
-debe ser `AsyncPostgresSaver` (el `PostgresSaver` sync no implementa `aget_tuple`/`aput`).
+debe ser `AsyncRedisSaver` (la variante async implementa `aget_tuple`/`aput`).
 
 **Las tools de negocio son `async def` y se registran con `coroutine=`, nunca `func=`**
 (ver `app/ai_core/tools/context.py`). Con `func=`, LangChain las trata como síncronas y le
@@ -139,7 +139,7 @@ los de una plantilla de Meta.
 |----------|--------|
 | `LOG_LEVEL=DEBUG` | Activa todos los `logger.debug(...)` del código doppel-api (bridge, webhook, erp) |
 | `AI_CORE_URL` | Cualquier valor no vacío activa el bot; vacío lo desactiva sin tocar código |
-| `CHAT_DB_URL` | Postgres del checkpointer de LangGraph. Requerido: sin él el agente no arranca |
+| `REDIS_URL` | Redis 8+ del checkpointer de LangGraph. Requerido: sin él el agente no arranca |
 | `DEEPSEEK_API_KEY` | Requerida por el bot; sin ella no se puede construir ningún chat model |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Ambas presentes → tracing de Langfuse; si falta una, se desactiva sin romper |
 | `GEMINI_API_KEY` | Habilita el análisis de imágenes de producto del front (`/erp/products/analyze-image`). Vacío → devuelve `ai_ok=false` sin llamar a la red |

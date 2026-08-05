@@ -12,7 +12,7 @@ filtraría de un cliente a otro. El `context=` de LangGraph es run-scoped: se pa
 en el `ainvoke` y el runtime lo propaga a los subgrafos, así que un objeto nuevo
 por invocación da aislamiento por construcción y no por convención.
 
-Tampoco puede vivir en el estado del grafo: el `AsyncPostgresSaver` lo
+Tampoco puede vivir en el estado del grafo: el `AsyncRedisSaver` lo
 serializaría al checkpoint, que es durable y acumulativo.
 """
 
