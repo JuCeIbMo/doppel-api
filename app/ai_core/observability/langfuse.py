@@ -48,7 +48,8 @@ def get_handler():
 
 
 def invocation_config(
-    thread_id: str, run_name: str, turn_id: str | None = None
+    thread_id: str, run_name: str, turn_id: str | None = None,
+    confirmed_action_id: str | None = None,
 ) -> dict[str, Any]:
     """Build the LangGraph config and attach Langfuse when configured.
 
@@ -59,7 +60,8 @@ def invocation_config(
     message is a genuinely new sale.
     """
     config: dict[str, Any] = {
-        "configurable": {"thread_id": thread_id, "turn_id": turn_id or ""},
+        "configurable": {"thread_id": thread_id, "turn_id": turn_id or "",
+                         "confirmed_action_id": confirmed_action_id or ""},
         "recursion_limit": GRAPH_RECURSION_LIMIT,
         "run_name": run_name,
     }

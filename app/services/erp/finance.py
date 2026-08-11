@@ -52,6 +52,7 @@ class FinanceService:
             "description": data.get("description"),
             "cash_account_id": data.get("cash_account_id") or await self._default_account_id(ctx),
             "actor": ctx.actor,
+            "admin_action_id": data.get("admin_action_id"),
         }
         if data.get("date"):
             payload["date"] = data["date"].isoformat() if isinstance(data["date"], date) else data["date"]

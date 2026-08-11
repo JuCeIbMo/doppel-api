@@ -19,6 +19,10 @@ class ToolContext:
     # id when available, otherwise a per-turn uuid). `create_order` keys its
     # idempotency off it — see `tools/sales.py`.
     turn_id: str = ""
+    # Set only by bridge after it validated a raw WhatsApp confirmation button.
+    # It prevents a model from executing an old action merely by seeing its id in
+    # durable conversation history.
+    confirmed_action_id: str = ""
     # Channel actions queued during this turn, delivered by the webhook once the
     # graph finishes. ``None`` when the graph was invoked without a `TurnRuntime`
     # (tests, CLI): the channel tools degrade to a no-op instead of raising.

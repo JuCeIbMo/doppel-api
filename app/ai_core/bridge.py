@@ -31,6 +31,8 @@ from app.ai_core.config.loader import load_tenant_config
 from app.ai_core.config.tenant import TenantConfig, resolve_role
 from app.ai_core.media.transcription import transcribe_audio_media
 from app.ai_core.media.vision import describe_image_media
+from app.services.erp.admin_actions import AdminActionService
+from app.services.erp.context import bot_context
 
 logger = logging.getLogger("doppel.ai_core.bridge")
 
@@ -138,6 +140,26 @@ async def _evict_agent(key: tuple[str, str]) -> None:
         _agents.pop(key, None)
 
 
+async def _consume_admin_confirmation(tenant: TenantConfig, thread_id: str,
+                                      reply: InteractiveReply | None) -> str | None:
+    """Validate our confirmation buttons before the LLM sees their identifier."""
+    if reply is None:
+        return None
+    value = reply.value
+    if value.startswith("admin-confirm:"):
+        action_id, confirmed = value.removeprefix("admin-confirm:"), True
+    elif value.startswith("admin-cancel:"):
+        action_id, confirmed = value.removeprefix("admin-cancel:"), False
+    else:
+        return None
+    if not action_id:
+        return None
+    return await AdminActionService().consume_reply(
+        bot_context(tenant.tenant_id, actor="admin_bot"), thread_id=thread_id,
+        action_id=action_id, confirmed=confirmed,
+    )
+
+
 async def respond(
     *,
     tenant_id: str,
@@ -195,7 +217,16 @@ async def respond(
         agent = await _get_or_build_agent(tenant, role)
         run_turn = run_admin_agent_turn if role == "admin" else run_public_agent_turn
         async with _thread_lock(thread_id):
-            result = await run_turn(agent, tenant, thread_id, text, message_id)
+            if role == "admin":
+                confirmed_action_id = await _consume_admin_confirmation(
+                    tenant, thread_id, interactive_reply
+                )
+                result = await run_turn(
+                    agent, tenant, thread_id, text, message_id,
+                    confirmed_action_id=confirmed_action_id,
+                )
+            else:
+                result = await run_turn(agent, tenant, thread_id, text, message_id)
 
         messages = result.get("messages", [])
         last = messages[-1] if messages else None

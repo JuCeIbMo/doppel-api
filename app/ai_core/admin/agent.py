@@ -57,6 +57,7 @@ async def run_admin_agent_turn(
     thread_id: str,
     user_message: str,
     message_id: str | None = None,
+    confirmed_action_id: str | None = None,
 ) -> dict[str, Any]:
     """Run one admin turn with input guardrails and per-turn tracing.
 
@@ -86,7 +87,8 @@ async def run_admin_agent_turn(
     ):
         result = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message, id=message_id)]},
-            config=invocation_config(thread_id, run_name, turn_id=turn_id),
+            config=invocation_config(thread_id, run_name, turn_id=turn_id,
+                                     confirmed_action_id=confirmed_action_id),
             context=turn_runtime,
         )
     latency_ms = int((time.time() - start) * 1000)

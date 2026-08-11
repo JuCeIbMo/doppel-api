@@ -25,8 +25,12 @@ ALL_PUBLIC_TOOLS = (
     "send_image", "send_reply_buttons", "send_list_message",
 )
 ALL_ADMIN_TOOLS = (
-    "get_sales_report", "update_stock", "get_config",
-    "search_catalog", "check_stock",
+    "get_sales_report", "get_config", "search_catalog", "check_stock",
+    "get_business_overview", "get_sales_analysis", "get_inventory_alerts",
+    "find_customers", "get_customer_details", "list_recent_sales", "get_sale_details",
+    "get_cash_summary", "propose_stock_adjustment",
+    "propose_product_change", "propose_transaction", "execute_confirmed_action",
+    "propose_sale_cancellation",
 )
 
 
