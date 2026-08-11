@@ -1,6 +1,8 @@
-# CLAUDE.md
+# Guía del repo
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Contrato de trabajo para agentes de código sobre este repositorio. Es una sola fuente de
+verdad: `AGENTS.md` es un symlink a este archivo, así que Claude Code y Codex leen lo mismo.
+Cualquier cambio va acá.
 
 ## Commands
 
