@@ -28,6 +28,7 @@ from app.ai_core.public import build_public_agent, run_public_agent_turn
 from app.ai_core.channel.actions import TurnResult
 from app.ai_core.channel.inbound import InteractiveReply
 from app.ai_core.config.loader import load_tenant_config
+from app.ai_core.tools.channel import ADMIN_CANCEL_PREFIX, ADMIN_CONFIRM_PREFIX
 from app.ai_core.config.tenant import TenantConfig, resolve_role
 from app.ai_core.media.transcription import transcribe_audio_media
 from app.ai_core.media.vision import describe_image_media
@@ -146,10 +147,10 @@ async def _consume_admin_confirmation(tenant: TenantConfig, thread_id: str,
     if reply is None:
         return None
     value = reply.value
-    if value.startswith("admin-confirm:"):
-        action_id, confirmed = value.removeprefix("admin-confirm:"), True
-    elif value.startswith("admin-cancel:"):
-        action_id, confirmed = value.removeprefix("admin-cancel:"), False
+    if value.startswith(ADMIN_CONFIRM_PREFIX):
+        action_id, confirmed = value.removeprefix(ADMIN_CONFIRM_PREFIX), True
+    elif value.startswith(ADMIN_CANCEL_PREFIX):
+        action_id, confirmed = value.removeprefix(ADMIN_CANCEL_PREFIX), False
     else:
         return None
     if not action_id:

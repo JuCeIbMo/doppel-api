@@ -10,6 +10,17 @@ from app.services.erp.exceptions import Conflict, NotFound
 from app.services.supabase_client import get_supabase
 
 _TTL = timedelta(minutes=15)
+# Si un worker muere entre `claim()` y `complete()`, la fila queda en "executing"
+# para siempre. Pasado este umbral se permite re-clamarla: es seguro porque las
+# escrituras no idempotentes (product_create, transaction) ya están protegidas
+# por el índice único `admin_action_id` de migration_v12_admin_actions.sql.
+_STUCK_EXECUTING_TIMEOUT = timedelta(minutes=5)
+
+
+def _parse_timestamp(value: str) -> datetime:
+    """Parsea un timestamp ISO de Postgres, asumiendo UTC si viene naive."""
+    parsed = datetime.fromisoformat(str(value))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 class AdminActionService:
@@ -33,7 +44,7 @@ class AdminActionService:
         action = rows[0]
         if action["status"] != "pending":
             return None
-        if str(action["expires_at"]) <= datetime.now(UTC).isoformat():
+        if _parse_timestamp(action["expires_at"]) <= datetime.now(UTC):
             await get_supabase().table("admin_pending_actions").update({"status": "expired"}).eq("id", action_id).execute()
             return None
         if not confirmed:
@@ -51,12 +62,18 @@ class AdminActionService:
         if not rows:
             raise NotFound("Acción pendiente no encontrada", action_id=action_id)
         action = rows[0]
-        if action["status"] == "executed":
+        status = action["status"]
+        if status == "executed":
             return action
-        if action["status"] != "confirmed":
+        stuck = (status == "executing" and action.get("confirmed_at") is not None
+                 and _parse_timestamp(action["confirmed_at"]) <= datetime.now(UTC) - _STUCK_EXECUTING_TIMEOUT)
+        if status != "confirmed" and not stuck:
+            if status == "executing":
+                raise Conflict("La acción ya está siendo procesada", action_id=action_id)
             raise Conflict("La acción no está confirmada", action_id=action_id)
+        expected_status = "executing" if stuck else "confirmed"
         updated = (await get_supabase().table("admin_pending_actions").update({"status": "executing"})
-                   .eq("id", action_id).eq("status", "confirmed").execute()).data or []
+                   .eq("id", action_id).eq("status", expected_status).execute()).data or []
         if not updated:
             raise Conflict("La acción ya está siendo procesada", action_id=action_id)
         return updated[0]

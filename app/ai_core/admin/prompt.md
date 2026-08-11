@@ -21,8 +21,9 @@ fechas y cantidades claros.
 Estas operaciones nunca cambian datos al ser propuestas. Explicá el cambio y
 llamá la tool correspondiente; el dueño recibe botones Confirmar y Cancelar.
 Solo después de que toque Confirmar, llamá `execute_confirmed_action` con el
-identificador del botón que llegó en el mensaje. No aceptes "sí", texto libre,
-ni un identificador viejo como autorización.
+identificador tal como aparece en el mensaje (el que sigue a "id:"), sin
+editarlo. No aceptes "sí", texto libre, ni un identificador viejo como
+autorización.
 
 - `propose_stock_adjustment`: cantidad real contada, no diferencia. Antes buscá
   el producto y repetí nombre y cantidad.

@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from app.ai_core.channel.actions import ReplyButton, SendButtonsAction
+from app.ai_core.tools.channel import ADMIN_CANCEL_PREFIX, ADMIN_CONFIRM_PREFIX, CHOICE_PREFIX
 from app.ai_core.tools.context import ToolContext, contextual_tool
 from app.models.erp_schemas import ProductCreate, ProductUpdate
 from app.services.erp.admin_actions import AdminActionService
@@ -82,8 +83,6 @@ async def get_sale_details(sale_id: str, ctx: ToolContext) -> dict:
 async def get_cash_summary(ctx: ToolContext, date_from: str | None = None,
                            date_to: str | None = None) -> dict:
     """Get cash accounts, cashflow and recent transactions for a date range."""
-    from datetime import date
-    today = date.today()
     f, t = default_period(date_from, date_to)
     service = FinanceService()
     erp = _ctx(ctx)
@@ -96,8 +95,8 @@ async def _propose(ctx: ToolContext, kind: str, payload: dict, summary: str) -> 
     action = await AdminActionService().create(_ctx(ctx), thread_id=ctx.thread_id, kind=kind, payload=payload, summary=summary)
     if ctx.outbox is not None:
         ctx.outbox.add(SendButtonsAction(body=summary, buttons=[
-            ReplyButton(id=f"choice:admin-confirm:{action['id']}", title="Confirmar"),
-            ReplyButton(id=f"choice:admin-cancel:{action['id']}", title="Cancelar"),
+            ReplyButton(id=f"{CHOICE_PREFIX}{ADMIN_CONFIRM_PREFIX}{action['id']}", title="Confirmar"),
+            ReplyButton(id=f"{CHOICE_PREFIX}{ADMIN_CANCEL_PREFIX}{action['id']}", title="Cancelar"),
         ]))
     return {"action_id": action["id"], "status": "pending", "summary": summary}
 
@@ -153,6 +152,7 @@ async def propose_sale_cancellation(sale_id: str, ctx: ToolContext) -> dict:
 @contextual_tool
 async def execute_confirmed_action(action_id: str, ctx: ToolContext) -> dict:
     """Execute the action confirmed by the owner pressing its WhatsApp button."""
+    action_id = action_id.removeprefix(ADMIN_CONFIRM_PREFIX)
     if ctx.confirmed_action_id != action_id:
         raise PermissionError("Esta acción sólo puede ejecutarse desde su botón Confirmar")
     service = AdminActionService()

@@ -30,6 +30,12 @@ from app.services.erp.context import bot_context
 # propio del de una plantilla de Meta o de un deploy anterior.
 CHOICE_PREFIX = "choice:"
 
+# Prefijos de los botones Confirmar/Cancelar del flujo admin propose→confirm.
+# Compartidos entre `tools/admin.py` (los emite) y `bridge.py` (los consume) para
+# que el id que se genera, el que ve el modelo y el que se compara sean el mismo.
+ADMIN_CONFIRM_PREFIX = "admin-confirm:"
+ADMIN_CANCEL_PREFIX = "admin-cancel:"
+
 _NO_CHANNEL = ChannelActionResult(ok=False, reason="channel_unavailable")
 
 
