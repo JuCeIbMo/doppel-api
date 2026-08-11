@@ -84,3 +84,16 @@ class ListRowInput(BaseModel):
 class ListSectionInput(BaseModel):
     title: str = Field(description="Section heading; max 24 characters")
     rows: list[ListRowInput] = Field(description="Options in this section")
+
+
+class ProductDraft(BaseModel):
+    """Campos que el agente admin puede proponer para un alta o edición básica
+    de producto. Todos opcionales acá: `propose_product_change` exige `name` y
+    `price` sólo cuando `action="create"`, y trata el resto como los únicos
+    campos a cambiar en un `action="update"`."""
+
+    name: str | None = Field(default=None, description="Nombre del producto")
+    price: float | None = Field(default=None, gt=0, description="Precio de venta, en Bs")
+    cost_price: float | None = Field(default=None, ge=0, description="Costo del producto, en Bs")
+    category: str | None = Field(default=None, description="Categoría del producto")
+    unit: str | None = Field(default=None, description="Unidad de venta, p.ej. 'unidad', 'kg'")

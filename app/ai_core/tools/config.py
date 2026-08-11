@@ -10,11 +10,11 @@ Applying changes stays in the dashboard, where the owner sees and confirms them.
 """
 
 from app.ai_core.config.loader import load_tenant_config
-from app.ai_core.tools.context import ToolContext, contextual_tool
+from app.ai_core.tools.context import InjectedCtx, contextual_tool
 
 
 @contextual_tool
-async def get_config(ctx: ToolContext) -> dict:
+async def get_config(ctx: InjectedCtx) -> dict:
     """Read the current bot configuration for this business.
 
     Read-only: this cannot change any setting. To actually apply a change, the

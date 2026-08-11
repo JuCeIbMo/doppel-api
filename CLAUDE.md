@@ -78,7 +78,7 @@ entrega al modelo un coroutine sin ejecutar, en silencio.
 
 El rol lo resuelve `resolve_role(user_phone, tenant)` por el número del remitente (verificado por Meta), nunca por el texto del mensaje:
 - `public` (`app/ai_core/public/`) → un router LLM clasifica **cada turno** y despacha a un especialista (greeter/catalog/objection/closer) + `create_order`. Grafo único `START → classify_intent → route_dispatch → <especialista> → END`: sin routing pegajoso y **sin handoffs entre especialistas** (un especialista no puede saltar a otro; si tiene que cambiar, lo decide el router del turno siguiente). El `active_agent` del turno anterior sesga la clasificación hacia la continuidad, no la fuerza. Ver `docs/ai-core-pendientes.md`.
-- `admin` (`app/ai_core/admin/`) → agente independiente. `tools.py` es el inventario explícito donde se agregan sus capacidades ERP; `prompt.md` es su contrato.
+- `admin` (`app/ai_core/admin/`) → agente independiente. `tools.py` es el inventario explícito donde se agregan sus capacidades ERP; `prompt.md` es su contrato. `app/services/admin_view.py` es al admin lo que `storefront.py` al público: shapes lean con listas ya acotadas y el sobrante contado. La diferencia es la salida: **las tools admin devuelven texto compacto** (`app/ai_core/tools/render.py` es la gramática de renderizado), no JSON — el dueño las lee por WhatsApp, no un cliente HTTP. `search_catalog`, `check_stock` y `get_config` son la excepción, porque son contrato compartido con el agente público: siguen devolviendo shapes estructurados. Ver `app/ai_core/admin/README.md` para el flujo de agregar una capacidad nueva.
 
 ### Herramienta de imagen de producto (Gemini, separada del bot)
 
@@ -146,6 +146,7 @@ los de una plantilla de Meta.
 - **La regla anterior vale para todo I/O, no sólo Supabase**, pero `tests/test_async_discipline.py` sólo audita el AST de las llamadas a Supabase. Los SDKs de terceros (Gemini, OpenAI, httpx) hay que revisarlos a mano: usá la variante async del cliente, o `asyncio.to_thread` si no hay.
 - **Los adjuntos de WhatsApp se borran al terminar el turno**: `download_media_files` (`app/whatsapp/inbound.py`) los baja a `/tmp/doppel-whatsapp-media/{tenant}/` y el `finally` de `process_bot_response` (`app/whatsapp/turn.py`) llama a `cleanup_media_files`, que los saca del disco por cualquier salida (incluidas las tempranas: bot apagado, cuenta no encontrada, agente caído). Nadie más los recolecta.
 - **`log_activity` es best-effort**: nunca lanza excepciones — un fallo de audit log no debe romper la operación. Es `async`, hay que awaitearlo.
+- **El `ctx` de una tool se anota `ctx: InjectedCtx`** (`app/ai_core/tools/context.py`, alias de `Annotated[ToolContext, InjectedToolArg]`), nunca `ctx: ToolContext` a secas. Con la anotación pelada, `ctx` sobrevive a `BaseTool._filter_injected_args` y el `TenantConfig` entero del tenant —`allowed_tools`, teléfonos admin, `welcome_message`— se serializa en el trace de Langfuse de cada llamada a tool. `InjectedCtx` lo saca tanto del schema que ve el modelo como del trace, sin tocar `ToolContextMiddleware` (que inyecta por nombre de campo, no por tipo).
 
 ### Variables de entorno relevantes
 
@@ -160,3 +161,13 @@ los de una plantilla de Meta.
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` | Ambas presentes → tracing de Langfuse; si falta una, se desactiva sin romper |
 | `GEMINI_API_KEY` | Habilita el análisis de imágenes de producto del front (`/erp/products/analyze-image`). Vacío → devuelve `ai_ok=false` sin llamar a la red |
 | `PRODUCT_IMAGES_BUCKET` | Bucket de Supabase Storage para imágenes de producto (default `product-images`) |
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

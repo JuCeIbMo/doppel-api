@@ -21,7 +21,7 @@ from app.ai_core.channel.actions import (
     SendImageAction,
     SendListAction,
 )
-from app.ai_core.tools.context import ToolContext, contextual_tool
+from app.ai_core.tools.context import InjectedCtx, ToolContext, contextual_tool
 from app.ai_core.tools.models import ChannelActionResult, ChoiceOption, ListSectionInput
 from app.services import storefront
 from app.services.erp.context import bot_context
@@ -45,7 +45,7 @@ def _erp_ctx(ctx: ToolContext):
 
 
 @contextual_tool
-async def send_image(product_id: str, ctx: ToolContext) -> ChannelActionResult:
+async def send_image(product_id: str, ctx: InjectedCtx) -> ChannelActionResult:
     """Show the customer the photo of a product. Use `product_id` exactly as returned by search_catalog.
 
     This is a CHANNEL action: WhatsApp delivers the photo as its own message.
@@ -75,7 +75,7 @@ async def send_image(product_id: str, ctx: ToolContext) -> ChannelActionResult:
 async def send_reply_buttons(
     body: Annotated[str, Field(min_length=1)],
     options: Annotated[list[ChoiceOption], Field(min_length=1, max_length=3)],
-    ctx: ToolContext,
+    ctx: InjectedCtx,
 ) -> ChannelActionResult:
     """Offer the customer up to 3 tappable buttons: a payment method, confirm/cancel, a pick between two products.
 
@@ -116,7 +116,7 @@ async def send_list_message(
     body: Annotated[str, Field(min_length=1)],
     button_label: Annotated[str, Field(min_length=1)],
     sections: Annotated[list[ListSectionInput], Field(min_length=1)],
-    ctx: ToolContext,
+    ctx: InjectedCtx,
 ) -> ChannelActionResult:
     """Show a scrollable menu of options grouped in sections: the catalog, categories, time slots.
 

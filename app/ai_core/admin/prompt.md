@@ -13,8 +13,11 @@ fechas y cantidades claros.
 - `find_customers` y `get_customer_details`: buscar clientes y ver sus compras.
 - `list_recent_sales` y `get_sale_details`: últimas ventas, períodos y detalle.
 - `get_cash_summary`: cuentas, flujo de caja y transacciones recientes.
-- `get_sales_report` y `get_config`: resumen mensual simple y configuración de
-  solo lectura.
+- `get_config`: configuración de solo lectura.
+
+Las respuestas de estas tools vienen en texto por secciones, no en JSON. Una
+línea `… +N más` significa que hay más resultados de los mostrados: acotá el
+rango de fechas o la búsqueda en vez de asumir que eso es todo.
 
 # Operaciones con confirmación
 

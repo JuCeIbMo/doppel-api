@@ -36,7 +36,6 @@ from app.ai_core.tools import (
     add_product,
     check_stock,
     create_order,
-    get_sales_report,
     human_handoff,
     search_catalog,
     get_config,
@@ -61,7 +60,7 @@ from app.ai_core.tools import (
 from app.ai_core.tools.context import ToolContext
 
 ALL_TOOLS = [
-    search_catalog, check_stock, create_order, get_sales_report,
+    search_catalog, check_stock, create_order,
     update_stock, add_product, human_handoff, get_config,
     send_image, send_reply_buttons, send_list_message,
     get_business_overview, get_sales_analysis, get_inventory_alerts,
@@ -100,12 +99,20 @@ def test_tool_returns_result_not_coroutine(monkeypatch):
     result = asyncio.run(search_catalog.ainvoke({"query": "agua", "ctx": _ctx()}))
 
     assert not inspect.iscoroutine(result), "tool returned an un-awaited coroutine"
-    assert [p.model_dump()["name"] for p in result.items] == ["Agua"]
+    assert [p["name"] for p in result["items"]] == ["Agua"]
 
-def test_ctx_hidden_from_model_but_validated():
+@pytest.mark.parametrize("tool", ALL_TOOLS, ids=lambda t: t.name)
+def test_ctx_hidden_from_model_but_validated(tool):
     """`ctx` is injected by middleware, so it must not be in the LLM's schema."""
-    assert "ctx" not in search_catalog.get_input_schema().model_fields
-    assert "ctx" in search_catalog.args_schema.model_fields
+    assert "ctx" not in tool.tool_call_schema.model_json_schema().get("properties", {})
+    assert "ctx" in tool.args_schema.model_fields
+
+def test_field_metadata_survives_for_the_model():
+    """Removing the old get_input_schema override must not lose Field(...) metadata."""
+    stock_schema = propose_stock_adjustment.tool_call_schema.model_json_schema()
+    assert stock_schema["properties"]["quantity"]["minimum"] == 0
+    tx_schema = propose_transaction.tool_call_schema.model_json_schema()
+    assert tx_schema["properties"]["amount"]["exclusiveMinimum"] == 0
 
 @pytest.mark.parametrize(
     "middleware",
@@ -186,7 +193,7 @@ def test_agent_entrypoints_are_async():
 def test_role_permission_still_enforced():
     """Admin-only tools must reject the public role through the async path."""
     with pytest.raises(PermissionError):
-        asyncio.run(get_sales_report.ainvoke({"ctx": _ctx("public")}))
+        asyncio.run(get_business_overview.ainvoke({"ctx": _ctx("public")}))
 
 # --------------------------------------------------------------------------
 # create_order: idempotencia
@@ -237,8 +244,8 @@ def test_retry_within_the_same_turn_reuses_the_key(monkeypatch):
     second = asyncio.run(create_order.ainvoke({"items": items, "ctx": ctx}))
 
     assert calls[0] == calls[1], "a retry in the same turn must hit the same sale"
-    assert first.duplicate is False
-    assert second.duplicate is True, "the model must be told it was already placed"
+    assert first["duplicate"] is False
+    assert second["duplicate"] is True, "the model must be told it was already placed"
 
 def test_item_order_does_not_change_the_key(monkeypatch):
     """El modelo puede listar los ítems al revés en el reintento; sigue siendo la misma orden."""
@@ -319,7 +326,7 @@ def test_send_image_queues_the_resolved_url(monkeypatch):
 
     result = asyncio.run(send_image.ainvoke({"product_id": "p1", "ctx": ctx}))
 
-    assert result.ok
+    assert result["ok"]
     assert [a.image_url for a in ctx.outbox.actions] == ["https://cdn/p1.webp"]
 
 def test_send_image_without_a_photo_is_not_an_error(monkeypatch):
@@ -332,7 +339,7 @@ def test_send_image_without_a_photo_is_not_an_error(monkeypatch):
 
     result = asyncio.run(send_image.ainvoke({"product_id": "p1", "ctx": ctx}))
 
-    assert (result.ok, result.reason) == (False, "no_image")
+    assert (result["ok"], result["reason"]) == (False, "no_image")
     assert ctx.outbox.actions == []
 
 
@@ -346,8 +353,8 @@ def test_send_image_only_queues_one_photo_per_turn(monkeypatch):
     first = asyncio.run(send_image.ainvoke({"product_id": "p1", "ctx": ctx}))
     second = asyncio.run(send_image.ainvoke({"product_id": "p2", "ctx": ctx}))
 
-    assert first.ok is True
-    assert (second.ok, second.reason) == (False, "image_already_queued")
+    assert first["ok"] is True
+    assert (second["ok"], second["reason"]) == (False, "image_already_queued")
     assert [action.image_url for action in ctx.outbox.actions] == ["https://cdn/p1.webp"]
 
 
@@ -361,7 +368,7 @@ def test_send_reply_buttons_namespaces_the_ids():
         "ctx": ctx,
     }))
 
-    assert result.ok
+    assert result["ok"]
     assert ctx.outbox.actions[0].buttons[0].id == "choice:cash"
     assert ctx.outbox.actions[0].buttons[0].title == "Efectivo"
 
@@ -377,8 +384,8 @@ def test_send_list_message_over_ten_rows_tells_the_model_why():
         "ctx": ctx,
     }))
 
-    assert not result.ok
-    assert "10 rows in total" in result.reason
+    assert not result["ok"]
+    assert "10 rows in total" in result["reason"]
     assert ctx.outbox.actions == []
 
 @pytest.mark.parametrize(
@@ -399,4 +406,4 @@ def test_channel_tools_degrade_without_an_outbox(tool, args):
 
     result = asyncio.run(tool.ainvoke({**args, "ctx": ctx}))
 
-    assert (result.ok, result.reason) == (False, "channel_unavailable")
+    assert (result["ok"], result["reason"]) == (False, "channel_unavailable")

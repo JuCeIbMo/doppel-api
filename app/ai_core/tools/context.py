@@ -1,10 +1,10 @@
 import inspect
 from dataclasses import dataclass
+from typing import Annotated
 
 from langchain.tools import tool
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, create_model
-from pydantic.fields import FieldInfo
+from langchain_core.tools import InjectedToolArg, StructuredTool
+from pydantic import BaseModel
 
 from app.ai_core.channel.outbox import TurnOutbox
 from app.ai_core.config.tenant import TenantConfig
@@ -29,16 +29,21 @@ class ToolContext:
     outbox: TurnOutbox | None = None
 
 
-_UNDEFINED = FieldInfo(annotation=str).default
+# `ctx: InjectedCtx` instead of a bare `ctx: ToolContext`: with `InjectedToolArg`,
+# LangChain drops the field from `tool_call_schema` (what the model sees) and from
+# `_filter_injected_args` (what reaches the Langfuse trace), while still keeping it
+# in `args_schema.model_fields` so `_tool_accepts_ctx` and the middleware injection
+# below keep working. A bare annotation survives both and leaks the tenant's whole
+# `TenantConfig` into every tool call's trace.
+InjectedCtx = Annotated[ToolContext, InjectedToolArg]
 
 
 def contextual_tool(func):
     """Decorate a function that needs a runtime-injected ``ToolContext``.
 
     The returned tool validates ``ctx`` at execution time (so the middleware can
-    inject it), but ``ctx`` is omitted from the JSON schema sent to the LLM.
-    This keeps the context object out of the model's tool-calling surface while
-    still making it available to business logic.
+    inject it), but ``ctx`` is omitted from the JSON schema sent to the LLM via the
+    ``InjectedCtx`` annotation on the argument itself.
 
     Every business tool in this package is an ``async def``, so it must be passed
     to ``from_function`` as ``coroutine=``, never as ``func=``: LangChain treats
@@ -48,17 +53,11 @@ def contextual_tool(func):
     base_tool = tool(func)
     is_async = inspect.iscoroutinefunction(func)
 
-    class ContextualTool(StructuredTool):
-        def get_input_schema(self, config=None):
-            fields = {}
-            for name, field_info in self.args_schema.model_fields.items():
-                if name == "ctx":
-                    continue
-                annotation = field_info.annotation
-                default = field_info.default
-                fields[name] = (annotation, default if default is not _UNDEFINED else ...)
-            return create_model(f"{self.name}_llm", **fields, __base__=BaseModel)
+    async def _acoroutine(*args, **kwargs):
+        result = await func(*args, **kwargs)
+        return result.model_dump(exclude_none=True) if isinstance(result, BaseModel) else result
 
+    class ContextualTool(StructuredTool):
         def __call__(self, *args, **kwargs):
             """Allow the tool to be invoked like a plain function in tests.
 
@@ -73,7 +72,7 @@ def contextual_tool(func):
 
     return ContextualTool.from_function(
         func=None if is_async else func,
-        coroutine=func if is_async else None,
+        coroutine=_acoroutine if is_async else None,
         name=base_tool.name,
         description=base_tool.description,
         args_schema=base_tool.args_schema,

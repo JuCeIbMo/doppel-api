@@ -36,6 +36,50 @@ def _margin_of(item: dict) -> float:
     return (float(item["unit_price"]) - float(item["unit_cost"])) * float(item["quantity"])
 
 
+def _aggregate_top_products(items: list[dict], limit: int = 5) -> list[dict]:
+    agg: dict[str, dict] = {}
+    for i in items:
+        a = agg.setdefault(i["product_name"], {"product_name": i["product_name"], "units": 0.0, "revenue": 0.0})
+        a["units"] += float(i["quantity"])
+        a["revenue"] += float(i["total"])
+    ranked = sorted(agg.values(), key=lambda x: x["revenue"], reverse=True)
+    for r in ranked:
+        r["units"] = round(r["units"], 3)
+        r["revenue"] = round(r["revenue"], 2)
+    return ranked[:limit]
+
+
+def _aggregate_margin(items: list[dict]) -> dict:
+    by_product: dict[str, dict] = {}
+    by_category: dict[str, dict] = defaultdict(lambda: {"revenue": 0.0, "margin": 0.0})
+    for i in items:
+        m = _margin_of(i)
+        rev = float(i["total"])
+        p = by_product.setdefault(i["product_name"], {"product_name": i["product_name"], "revenue": 0.0, "margin": 0.0})
+        p["revenue"] += rev
+        p["margin"] += m
+        cat = (i.get("products") or {}).get("category") or "Sin categoría"
+        by_category[cat]["revenue"] += rev
+        by_category[cat]["margin"] += m
+
+    def finalize(d: dict) -> dict:
+        d["revenue"] = round(d["revenue"], 2)
+        d["margin"] = round(d["margin"], 2)
+        d["margin_pct"] = round((d["margin"] / d["revenue"] * 100) if d["revenue"] else 0, 1)
+        return d
+
+    gross_margin = round(sum(_margin_of(i) for i in items), 2)
+    revenue = sum(float(i["total"]) for i in items)
+    gross_margin_pct = round((gross_margin / revenue * 100) if revenue else 0, 1)
+
+    return {
+        "gross_margin": gross_margin,
+        "gross_margin_pct": gross_margin_pct,
+        "by_product": [finalize(p) for p in sorted(by_product.values(), key=lambda x: x["margin"], reverse=True)],
+        "by_category": [finalize({"category": k, **v}) for k, v in by_category.items()],
+    }
+
+
 class ReportsService:
     def __init__(self) -> None:
         self.inventory = InventoryService()
@@ -88,16 +132,7 @@ class ReportsService:
     async def top_products(self, ctx: ERPContext, *, date_from: str, date_to: str,
                            limit: int = 5) -> list[dict]:
         items = await _sale_items_in_period(ctx.tenant_id, date_from, date_to)
-        agg: dict[str, dict] = {}
-        for i in items:
-            a = agg.setdefault(i["product_name"], {"product_name": i["product_name"], "units": 0.0, "revenue": 0.0})
-            a["units"] += float(i["quantity"])
-            a["revenue"] += float(i["total"])
-        ranked = sorted(agg.values(), key=lambda x: x["revenue"], reverse=True)
-        for r in ranked:
-            r["units"] = round(r["units"], 3)
-            r["revenue"] = round(r["revenue"], 2)
-        return ranked[:limit]
+        return _aggregate_top_products(items, limit)
 
     async def sales_by_period(self, ctx: ERPContext, *, date_from: str, date_to: str,
                               group_by: str = "day") -> list[dict]:
@@ -126,34 +161,7 @@ class ReportsService:
 
     async def margin(self, ctx: ERPContext, *, date_from: str, date_to: str) -> dict:
         items = await _sale_items_in_period(ctx.tenant_id, date_from, date_to)
-        by_product: dict[str, dict] = {}
-        by_category: dict[str, dict] = defaultdict(lambda: {"revenue": 0.0, "margin": 0.0})
-        for i in items:
-            m = _margin_of(i)
-            rev = float(i["total"])
-            p = by_product.setdefault(i["product_name"], {"product_name": i["product_name"], "revenue": 0.0, "margin": 0.0})
-            p["revenue"] += rev
-            p["margin"] += m
-            cat = (i.get("products") or {}).get("category") or "Sin categoría"
-            by_category[cat]["revenue"] += rev
-            by_category[cat]["margin"] += m
-
-        def finalize(d: dict) -> dict:
-            d["revenue"] = round(d["revenue"], 2)
-            d["margin"] = round(d["margin"], 2)
-            d["margin_pct"] = round((d["margin"] / d["revenue"] * 100) if d["revenue"] else 0, 1)
-            return d
-
-        gross_margin = round(sum(_margin_of(i) for i in items), 2)
-        revenue = sum(float(i["total"]) for i in items)
-        gross_margin_pct = round((gross_margin / revenue * 100) if revenue else 0, 1)
-
-        return {
-            "gross_margin": gross_margin,
-            "gross_margin_pct": gross_margin_pct,
-            "by_product": [finalize(p) for p in sorted(by_product.values(), key=lambda x: x["margin"], reverse=True)],
-            "by_category": [finalize({"category": k, **v}) for k, v in by_category.items()],
-        }
+        return _aggregate_margin(items)
 
     async def clients(self, ctx: ERPContext, *, date_from: str, date_to: str) -> dict:
         sales = (

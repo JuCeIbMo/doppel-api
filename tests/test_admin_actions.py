@@ -104,7 +104,9 @@ def test_confirmation_id_chain_end_to_end(monkeypatch):
     assert f"id: {ADMIN_CONFIRM_PREFIX}{action_id}" in note
 
     async def _fake_claim(self, ctx, *, thread_id, action_id):
-        return {"id": action_id, "status": "executed", "result": {"ok": True}}
+        return {"id": action_id, "status": "executed", "kind": "transaction",
+                "payload": {"type": "expense", "amount": 5, "category": "Otros"},
+                "result": {"ok": True}}
 
     monkeypatch.setattr(admin_tools.AdminActionService, "claim", _fake_claim)
 
@@ -113,7 +115,7 @@ def test_confirmation_id_chain_end_to_end(monkeypatch):
     result = asyncio.run(execute_confirmed_action.ainvoke({
         "action_id": reply.value, "ctx": _tool_ctx(confirmed_action_id=confirmed_id),
     }))
-    assert result == {"ok": True}
+    assert result == "Ya estaba ejecutada: se registró gasto de 5 Bs en Otros."
 
 
 def test_execute_confirmed_action_rejects_mismatched_id(monkeypatch):

@@ -1,10 +1,10 @@
-from app.ai_core.tools.context import ToolContext, contextual_tool
+from app.ai_core.tools.context import InjectedCtx, contextual_tool
 from app.ai_core.tools.models import HandoffResult
 from app.services.erp.context import bot_context, log_activity
 
 
 @contextual_tool
-async def human_handoff(reason: str, ctx: ToolContext) -> HandoffResult:
+async def human_handoff(reason: str, ctx: InjectedCtx) -> HandoffResult:
     """Request a handoff to a human agent."""
     if ctx.role != "public":
         raise PermissionError("human_handoff requires public role")

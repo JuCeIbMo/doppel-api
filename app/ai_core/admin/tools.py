@@ -14,7 +14,6 @@ from app.ai_core.tools import (
     get_config,
     get_inventory_alerts,
     get_sales_analysis,
-    get_sales_report,
     get_sale_details,
     list_recent_sales,
     propose_product_change,
@@ -25,7 +24,6 @@ from app.ai_core.tools import (
 )
 
 ADMIN_TOOLS = [
-    get_sales_report,
     get_config,
     search_catalog,
     check_stock,

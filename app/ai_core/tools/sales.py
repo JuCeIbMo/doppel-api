@@ -22,7 +22,7 @@ from Meta lands on the same key too.
 import hashlib
 import json
 
-from app.ai_core.tools.context import ToolContext, contextual_tool
+from app.ai_core.tools.context import InjectedCtx, ToolContext, contextual_tool
 from app.ai_core.tools.models import OrderItemInput, OrderItemResult, OrderResult
 from app.services import storefront
 from app.services.erp.context import bot_context
@@ -63,7 +63,7 @@ def _idempotency_key(ctx: ToolContext, items: list[OrderItemInput]) -> str | Non
 
 
 @contextual_tool
-async def create_order(items: list[OrderItemInput], ctx: ToolContext) -> OrderResult:
+async def create_order(items: list[OrderItemInput], ctx: InjectedCtx) -> OrderResult:
     """Create a confirmed order after verifying stock. Confirm product, quantity
     and price with the customer before calling this.
 

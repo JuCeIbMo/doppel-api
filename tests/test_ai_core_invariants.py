@@ -56,8 +56,8 @@ def test_missing_product_is_reported_as_not_found(monkeypatch):
     result = asyncio.run(
         check_stock.ainvoke({"product_id": "hallucinated", "ctx": _ctx()})
     )
-    assert result.found is False
-    assert result.quantity == 0
+    assert result["found"] is False
+    assert result["quantity"] == 0
 
 def test_real_product_with_no_stock_is_still_found(monkeypatch):
     """The whole point of `found`: zero stock and a bad id must differ."""
@@ -67,8 +67,8 @@ def test_real_product_with_no_stock_is_still_found(monkeypatch):
     monkeypatch.setattr("app.ai_core.tools.stock.ProductsService.get", zero_stock)
 
     result = asyncio.run(check_stock.ainvoke({"product_id": "real", "ctx": _ctx()}))
-    assert result.found is True
-    assert result.quantity == 0
+    assert result["found"] is True
+    assert result["quantity"] == 0
 
 def test_check_stock_tells_the_model_what_found_means():
     """The flag only helps if the tool description explains it."""

@@ -2,7 +2,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from app.ai_core.tools.context import ToolContext, contextual_tool
+from app.ai_core.tools.context import InjectedCtx, ToolContext, contextual_tool
 from app.ai_core.tools.models import StockResult
 from app.services.erp.context import bot_context
 from app.services.erp.exceptions import NotFound
@@ -16,7 +16,7 @@ def _erp_ctx(ctx: ToolContext):
 
 
 @contextual_tool
-async def check_stock(product_id: str, ctx: ToolContext) -> StockResult:
+async def check_stock(product_id: str, ctx: InjectedCtx) -> StockResult:
     """Check available stock for a product by its id (as returned by search_catalog).
 
     If `found` is false the id does not exist — do not tell the customer the
@@ -38,7 +38,7 @@ async def check_stock(product_id: str, ctx: ToolContext) -> StockResult:
 async def update_stock(
     product_id: str,
     quantity: Annotated[float, Field(ge=0)],
-    ctx: ToolContext,
+    ctx: InjectedCtx,
 ) -> StockResult:
     """Set the stock quantity for a product to a specific count. Admin-only."""
     if ctx.role != "admin":

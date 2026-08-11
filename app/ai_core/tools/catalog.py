@@ -9,7 +9,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from app.ai_core.tools.context import ToolContext, contextual_tool
+from app.ai_core.tools.context import InjectedCtx, ToolContext, contextual_tool
 from app.ai_core.tools.models import CatalogPage, ProductResult
 from app.services import storefront
 from app.services.erp.context import bot_context
@@ -22,7 +22,7 @@ def _erp_ctx(ctx: ToolContext):
 
 
 @contextual_tool
-async def search_catalog(query: str | None, ctx: ToolContext, page: int = 0) -> CatalogPage:
+async def search_catalog(query: str | None, ctx: InjectedCtx, page: int = 0) -> CatalogPage:
     """Search available products by name, description and tags.
 
     Omit `query` to list everything available. Search terms are normalized for
@@ -51,7 +51,7 @@ async def search_catalog(query: str | None, ctx: ToolContext, page: int = 0) -> 
 
 @contextual_tool
 async def add_product(
-    ctx: ToolContext,
+    ctx: InjectedCtx,
     name: Annotated[str, Field(min_length=1)],
     price: Annotated[float, Field(gt=0)],
     description: str | None = None,
