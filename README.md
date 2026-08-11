@@ -4,6 +4,9 @@ API multi-tenant para el ERP de Doppel y sus agentes de WhatsApp. La estructura 
 ordenada por responsabilidad: los routers sólo traducen HTTP, los módulos de dominio
 ejecutan el caso de uso y `ai_core` contiene exclusivamente la lógica de agentes.
 
+`AGENTS.md` es un symlink a `CLAUDE.md`, para que Claude Code y Codex compartan el
+mismo contrato de trabajo del repositorio.
+
 ## Por dónde empezar
 
 Para seguir un mensaje entrante, este es el hilo principal:
