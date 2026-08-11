@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -34,8 +36,16 @@ logger = logging.getLogger("doppel")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=30.0)
+
+    from app.whatsapp.inbound import run_media_reaper
+
+    reaper_task = asyncio.create_task(run_media_reaper())
+
     logger.info("doppel-api started")
     yield
+    reaper_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await reaper_task
     await app.state.http_client.aclose()
     # Imported here, not at module scope: pulling in langgraph on every import
     # of `app.main` is dead weight for deployments with the bot disabled.

@@ -5,8 +5,9 @@ Reemplaza a `app/ai/bridge.py` (Agno). Diferencias del contrato viejo:
   acá por `resolve_role(user_phone, tenant)` (autoridad del número, igual que
   antes), y el prompt/modelo salen de `app/ai_core` (prompts estáticos +
   DeepSeek), no de `bot_configs.system_prompt`/`ai_model`.
-- No soporta imágenes todavía (ver `media/transcription.py`) — solo texto y
-  transcripción de audio.
+- Las imágenes entrantes se describen con Gemini (`media/vision.py`) antes de
+  llegar al agente: éste nunca ve la foto, sólo el texto que la describe. Sin
+  `GEMINI_API_KEY` o si Gemini falla, cae a pedirle al cliente que la describa.
 
 Cachea un agente compilado por `(tenant_id, role)` para no reconstruir el grafo
 en cada mensaje (la conexión sale del pool compartido de `persistence`). El
@@ -29,6 +30,7 @@ from app.ai_core.channel.inbound import InteractiveReply
 from app.ai_core.config.loader import load_tenant_config
 from app.ai_core.config.tenant import TenantConfig, resolve_role
 from app.ai_core.media.transcription import transcribe_audio_media
+from app.ai_core.media.vision import describe_image_media
 
 logger = logging.getLogger("doppel.ai_core.bridge")
 
@@ -50,7 +52,8 @@ def _document_note(media: list[dict] | None) -> str:
     return "\n[documento adjunto]" if docs else ""
 
 
-def _image_note(media: list[dict] | None) -> str:
+def _image_fallback_note(media: list[dict] | None) -> str:
+    """Se usa sólo si hay imágenes pero Gemini no pudo describir ninguna (sin key o falla)."""
     images = [m for m in (media or []) if m.get("type") == "image"]
     return "\n[el cliente envió una imagen; hoy no puedo verla, pedile que describa lo que busca]" if images else ""
 
@@ -167,6 +170,7 @@ async def respond(
         thread_id = f"{tenant_id}:{role}:{user_phone}"
 
         transcript = await transcribe_audio_media(media)
+        image_description = await describe_image_media(media)
         # Un tap no es texto del cliente: se reemplaza por la nota, en vez de
         # mandarle al agente el título del botón como si lo hubiera escrito.
         text_parts = (
@@ -177,7 +181,11 @@ async def respond(
         if transcript:
             text_parts.append(f"[Nota de voz]: {transcript}")
             logger.debug("[TRANSCRIPCION] tenant=%s chars=%d", tenant_id, len(transcript))
-        text = ("\n".join(text_parts) + _image_note(media) + _document_note(media)).strip()
+        if image_description:
+            text_parts.append(f"[Imagen enviada]: {image_description}")
+            logger.debug("[VISION] tenant=%s chars=%d", tenant_id, len(image_description))
+        fallback = "" if image_description else _image_fallback_note(media)
+        text = ("\n".join(text_parts) + fallback + _document_note(media)).strip()
 
         logger.debug(
             "[INPUT_AGENTE] tenant=%s role=%s texto_final=%r",

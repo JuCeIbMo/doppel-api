@@ -1,7 +1,9 @@
 """Normalize inbound Meta messages and manage their temporary media files."""
 
+import asyncio
 import logging
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +16,7 @@ from app.whatsapp import meta
 
 logger = logging.getLogger("doppel.whatsapp.inbound")
 _MEDIA_MESSAGE_TYPES = {"image", "audio", "voice", "document"}
+_MEDIA_ROOT = Path(tempfile.gettempdir()) / "doppel-whatsapp-media"
 
 
 @dataclass
@@ -82,12 +85,7 @@ def _media_download_path(*, tenant_id: str, media_item: dict) -> Path:
             "audio/mpeg": ".mp3",
             "application/pdf": ".pdf",
         }.get(str(media_item.get("mime_type") or ""), "")
-    return (
-        Path(tempfile.gettempdir())
-        / "doppel-whatsapp-media"
-        / tenant_id
-        / f"{uuid.uuid4().hex}{suffix}"
-    )
+    return _MEDIA_ROOT / tenant_id / f"{uuid.uuid4().hex}{suffix}"
 
 
 async def download_media_files(
@@ -128,3 +126,44 @@ def cleanup_media_files(media: list[dict] | None) -> None:
             Path(path).unlink(missing_ok=True)
         except OSError:
             logger.warning("No se pudo borrar el media temporal path=%s", path, exc_info=True)
+
+
+_MEDIA_MAX_AGE_SECONDS = 30 * 60
+_MEDIA_SWEEP_INTERVAL_SECONDS = 15 * 60
+
+
+def _sweep_stale_media(max_age_seconds: int = _MEDIA_MAX_AGE_SECONDS) -> int:
+    """Delete leftover attachments older than `max_age_seconds`. Returns how many.
+
+    `cleanup_media_files` only runs on the happy path of `process_bot_response`'s
+    `finally` — a hard kill (OOM, `kill -9`) between download and that `finally`
+    orphans the file forever. This is the backstop: safe to run concurrently
+    with live turns since it only ever touches files old enough to belong to a
+    turn that has already finished one way or another.
+    """
+    if not _MEDIA_ROOT.exists():
+        return 0
+    cutoff = time.time() - max_age_seconds
+    removed = 0
+    for path in _MEDIA_ROOT.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
+                removed += 1
+        except OSError:
+            logger.warning("No se pudo barrer media residual path=%s", path, exc_info=True)
+    return removed
+
+
+async def run_media_reaper() -> None:
+    """Background loop that sweeps orphaned WhatsApp media until cancelled."""
+    while True:
+        try:
+            removed = await asyncio.to_thread(_sweep_stale_media)
+            if removed:
+                logger.info("reaper de media: borrados %d archivos residuales", removed)
+        except Exception:
+            logger.exception("reaper de media falló")
+        await asyncio.sleep(_MEDIA_SWEEP_INTERVAL_SECONDS)

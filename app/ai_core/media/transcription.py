@@ -1,10 +1,8 @@
 """Whisper audio transcription for voice notes. Framework-agnostic (plain OpenAI
 SDK), ported unchanged except for where it reads the API key from.
 
-No image support here: none of the ai_core subagents have a vision tool today,
-unlike the old Agno bridge (`app/ai/media/transcription.py`) which handed
-images straight to the model. Images sent via WhatsApp are silently ignored
-until a subagent gains a vision-capable tool — a real gap, not a silent one.
+Image handling lives separately in `media/vision.py` (Gemini describes the
+photo into text before it reaches the agent).
 """
 
 from __future__ import annotations
