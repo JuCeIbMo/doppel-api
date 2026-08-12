@@ -466,67 +466,67 @@
   },
   "migration.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "f65971fdf9a6e80563fcade833849b8a",
     "semantic_hash": ""
   },
   "migration_auth.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "a25dbea6461a1113c4a92387dfcdab84",
     "semantic_hash": ""
   },
   "migration_v10_sale_idempotency.sql": {
     "mtime": 1785862099.6683955,
-    "ast_hash": "",
+    "ast_hash": "12fbfb12dca857b6cc2adf6722935afc",
     "semantic_hash": ""
   },
   "migration_v11_product_search.sql": {
     "mtime": 1786414287.5181208,
-    "ast_hash": "",
+    "ast_hash": "74c3b69dc6bd5b6938ed5d33a4f490ab",
     "semantic_hash": ""
   },
   "migration_v12_admin_actions.sql": {
     "mtime": 1786421855.360735,
-    "ast_hash": "",
+    "ast_hash": "386b731383a61b7d52844a1e0850844e",
     "semantic_hash": ""
   },
   "migration_v2.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "a158c5e735c7316356f5c02d57b9160b",
     "semantic_hash": ""
   },
   "migration_v3.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "cd013c134399b77e769b734a50fd7d97",
     "semantic_hash": ""
   },
   "migration_v4.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "91289a6999a2d7a3858e7870323246f0",
     "semantic_hash": ""
   },
   "migration_v5.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "32b9cf72dd8bba009062ac17e2c42f6f",
     "semantic_hash": ""
   },
   "migration_v6_nanobot_runtime.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "20354db83575e168465def72a7968d88",
     "semantic_hash": ""
   },
   "migration_v7_whatsapp_offboarding.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "0aeda52fee3e84640b28ad3c5aaffe3d",
     "semantic_hash": ""
   },
   "migration_v8_erp.sql": {
     "mtime": 1785862001.9049995,
-    "ast_hash": "",
+    "ast_hash": "f8a83e8e4df7c1a96b1035cc6220d866",
     "semantic_hash": ""
   },
   "migration_v9_product_tags.sql": {
     "mtime": 1785862099.6683955,
-    "ast_hash": "",
+    "ast_hash": "6ceb64ab8eb2a2b74b4b84386cbccea5",
     "semantic_hash": ""
   },
   "tests/api_case.py": {
@@ -675,7 +675,7 @@
     "semantic_hash": "9b31786b637be3c13978bec4c2330752"
   },
   ".claude/skills/graphify/SKILL.md": {
-    "mtime": 1786430285.28723,
+    "mtime": 1786551405.7224822,
     "ast_hash": "1656a8a8e4a05bbe69f32cd15de81e87",
     "semantic_hash": "1656a8a8e4a05bbe69f32cd15de81e87"
   },
