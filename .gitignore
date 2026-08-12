@@ -10,3 +10,6 @@ venv/
 *.egg-info/
 dist/
 .DS_Store
+
+# graphify
+graphify-out/cost.json
