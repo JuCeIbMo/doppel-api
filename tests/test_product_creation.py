@@ -36,7 +36,6 @@ class _Products:
         return {
             "id": "p1",
             **payload,
-            "has_variants": False,
             "low_stock_threshold": payload.get("low_stock_threshold", 5),
             "unit": payload.get("unit", "unidad"),
             "available": payload.get("available", True),
@@ -130,7 +129,7 @@ def client(monkeypatch):
             "sku": None, "barcode": None, "category": "bebidas",
             "image_url": "https://cdn.test/t1/abc.webp", "cost_price": 0,
             "price": 10, "unit": "unidad", "available": True,
-            "has_variants": False, "low_stock_threshold": 5, "tags": ["cola"],
+            "low_stock_threshold": 5, "tags": ["cola"],
             "image_analysis_ok": True,
         }
 

@@ -1,4 +1,4 @@
-"""Products + variants endpoints. Thin: validate input, delegate to ProductsService."""
+"""Products endpoints. Thin: validate input, delegate to ProductsService."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from app.models.erp_schemas import (
     ProductCreate,
     ProductResponse,
     ProductUpdate,
-    VariantCreate,
-    VariantResponse,
 )
 from app.services.erp.context import ERPContext, get_erp_context
 from app.services.erp.product_creation import ProductCreationService
@@ -97,18 +95,3 @@ async def update_product(
 @router.delete("/{product_id}")
 async def delete_product(product_id: str, ctx: ERPContext = Depends(get_erp_context)):
     return await service.soft_delete(ctx, product_id)
-
-
-@router.post("/{product_id}/variants", response_model=VariantResponse)
-async def add_variant(
-    product_id: str, body: VariantCreate, ctx: ERPContext = Depends(get_erp_context)
-):
-    return await service.add_variant(ctx, product_id, body.model_dump(exclude_none=True))
-
-
-@router.put("/{product_id}/variants/{variant_id}", response_model=VariantResponse)
-async def update_variant(
-    product_id: str, variant_id: str, body: VariantCreate,
-    ctx: ERPContext = Depends(get_erp_context),
-):
-    return await service.update_variant(ctx, product_id, variant_id, body.model_dump(exclude_unset=True))

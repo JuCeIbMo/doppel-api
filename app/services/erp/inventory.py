@@ -12,12 +12,11 @@ from app.services.erp.exceptions import InsufficientStock, ValidationError
 from app.services.supabase_client import get_supabase
 
 
-async def _current_stock(tenant_id: str, product_id: str, variant_id: str | None) -> float:
+async def _current_stock(tenant_id: str, product_id: str) -> float:
     q = (
         get_supabase().table("inventory").select("quantity")
         .eq("tenant_id", tenant_id).eq("product_id", product_id)
     )
-    q = q.is_("variant_id", "null") if variant_id is None else q.eq("variant_id", variant_id)
     rows = (await q.limit(1).execute()).data
     return float(rows[0]["quantity"]) if rows else 0.0
 
@@ -26,7 +25,7 @@ class InventoryService:
     async def list_stock(self, ctx: ERPContext, *, limit: int = 200, offset: int = 0) -> list[dict]:
         rows = (
             await get_supabase().table("inventory")
-            .select("product_id, variant_id, quantity, products(name, category, unit, low_stock_threshold)")
+            .select("product_id, quantity, products(name, category, unit, low_stock_threshold)")
             .eq("tenant_id", ctx.tenant_id).range(offset, offset + limit - 1).execute()
         ).data or []
         out = []
@@ -35,7 +34,6 @@ class InventoryService:
             out.append({
                 "product_id": r["product_id"],
                 "product_name": p.get("name", ""),
-                "variant_id": r.get("variant_id"),
                 "category": p.get("category"),
                 "unit": p.get("unit", "unidad"),
                 "quantity": float(r["quantity"]),
@@ -51,7 +49,7 @@ class InventoryService:
                         limit: int = 50, offset: int = 0) -> list[dict]:
         q = (
             get_supabase().table("inventory_movements")
-            .select("id, product_id, variant_id, type, quantity, unit_cost, reference_id, notes, actor, created_at, products(name)")
+            .select("id, product_id, type, quantity, unit_cost, reference_id, notes, actor, created_at, products(name)")
             .eq("tenant_id", ctx.tenant_id).order("created_at", desc=True)
         )
         if product_id:
@@ -61,7 +59,7 @@ class InventoryService:
             r["product_name"] = (r.pop("products", None) or {}).get("name")
         return rows
 
-    async def adjust(self, ctx: ERPContext, *, product_id: str, variant_id: str | None,
+    async def adjust(self, ctx: ERPContext, *, product_id: str,
                      new_quantity: float | None, delta: float | None, note: str) -> dict:
         """Apply a manual stock correction by inserting one adjustment movement.
 
@@ -71,7 +69,7 @@ class InventoryService:
         if (new_quantity is None) == (delta is None):
             raise ValidationError("Indica exactamente uno: new_quantity o delta")
 
-        current = await _current_stock(ctx.tenant_id, product_id, variant_id)
+        current = await _current_stock(ctx.tenant_id, product_id)
         move_type, move_qty = _resolve_adjustment(product_id, current, new_quantity, delta)
 
         if move_qty == 0:
@@ -80,7 +78,6 @@ class InventoryService:
         movement = {
             "tenant_id": ctx.tenant_id,
             "product_id": product_id,
-            "variant_id": variant_id,
             "type": move_type,
             "quantity": move_qty,
             "notes": note,
@@ -92,7 +89,7 @@ class InventoryService:
         return {
             "ok": True,
             "product_id": product_id,
-            "quantity": await _current_stock(ctx.tenant_id, product_id, variant_id),
+            "quantity": await _current_stock(ctx.tenant_id, product_id),
             "movement": {"type": move_type, "quantity": move_qty},
         }
 

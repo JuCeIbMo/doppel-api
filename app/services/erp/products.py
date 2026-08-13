@@ -1,6 +1,6 @@
-"""Products + variants service. All logic + Supabase access for the catalog.
+"""Products service. All logic + Supabase access for the catalog.
 
-Reuses the existing `products` table (extended in migration_v8_erp.sql). Stock is
+Reuses the existing `products` table (extended in schema_erp.sql). Stock is
 read from the `inventory` table and merged in, so a single product response carries
 its current quantity — IA-friendly for the bot.
 """
@@ -16,12 +16,12 @@ from app.services.supabase_client import get_supabase
 
 _FIELDS = (
     "id, name, description, sku, barcode, category, image_url, cost_price, price, "
-    "unit, available, has_variants, low_stock_threshold, tags, created_at"
+    "unit, available, low_stock_threshold, tags, created_at"
 )
 
 
 async def _stock_map(tenant_id: str, product_ids: list[str]) -> dict[str, float]:
-    """Sum inventory quantity per product (across variants) for the given products."""
+    """Sum inventory quantity per product for the given products."""
     if not product_ids:
         return {}
     rows = (
@@ -65,7 +65,7 @@ class ProductsService:
         """Search available products across name, description and tags.
 
         Ranking and tenant isolation live in the Postgres RPC created by
-        ``migration_v11_product_search.sql``. The result order must be kept: it
+        ``schema_erp.sql``. The result order must be kept: it
         is relevance order, not the alphabetical order used by ``list``.
         """
         result = await get_supabase().rpc(
@@ -158,28 +158,3 @@ class ProductsService:
         await log_activity(ctx, action="product.deactivated", module="inventory",
                      detail={"product_id": product_id})
         return {"ok": True, "product_id": product_id}
-
-    # --- variants ---
-    async def add_variant(self, ctx: ERPContext, product_id: str, data: dict[str, Any]) -> dict:
-        await self.get(ctx, product_id)
-        payload = {**data, "tenant_id": ctx.tenant_id, "product_id": product_id}
-        row = (await get_supabase().table("product_variants").insert(payload).execute()).data[0]
-        (
-            await get_supabase().table("products").update({"has_variants": True})
-            .eq("tenant_id", ctx.tenant_id).eq("id", product_id).execute()
-        )
-        await log_activity(ctx, action="variant.created", module="inventory",
-                     detail={"product_id": product_id, "variant_id": row["id"]})
-        return row
-
-    async def update_variant(self, ctx: ERPContext, product_id: str, variant_id: str,
-                             data: dict[str, Any]) -> dict:
-        clean = {k: v for k, v in data.items() if v is not None}
-        rows = (
-            await get_supabase().table("product_variants").update(clean)
-            .eq("tenant_id", ctx.tenant_id).eq("id", variant_id).eq("product_id", product_id)
-            .execute()
-        ).data
-        if not rows:
-            raise NotFound("Variante no encontrada", variant_id=variant_id)
-        return rows[0]

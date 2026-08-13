@@ -13,7 +13,7 @@ _TTL = timedelta(minutes=15)
 # Si un worker muere entre `claim()` y `complete()`, la fila queda en "executing"
 # para siempre. Pasado este umbral se permite re-clamarla: es seguro porque las
 # escrituras no idempotentes (product_create, transaction) ya están protegidas
-# por el índice único `admin_action_id` de migration_v12_admin_actions.sql.
+# por el índice único `admin_action_id` de schema_erp.sql.
 _STUCK_EXECUTING_TIMEOUT = timedelta(minutes=5)
 
 

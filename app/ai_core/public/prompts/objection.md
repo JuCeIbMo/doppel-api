@@ -43,7 +43,7 @@ Identificá el tipo y cargá la referencia correspondiente:
 ## Señales de que la objeción se superó
 
 - Cliente hace pregunta logística (envío, pago, disponibilidad)
-- Cliente pregunta por variante específica (talla, color)
+- Cliente pregunta por un detalle específico del producto (talla, color)
 - Cliente dice "bueno", "dale", "está bien"
 - Cliente da info que solo importa si va a comprar (dirección, horario)
 

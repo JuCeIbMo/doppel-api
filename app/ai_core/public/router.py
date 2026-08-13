@@ -40,7 +40,7 @@ SPECIALIST_PROFILES = {
     },
     "catalog": {
         "agent": "catalog",
-        "handles": "finding products, product details, prices, variants, categories, and availability using catalog and stock tools",
+        "handles": "finding products, product details, prices, categories, and availability using catalog and stock tools",
         "does_not_handle": "persuading through a sales concern or finalizing an order",
         "signals": "what do you have, show me, price, size, color, stock, availability, compare products",
     },

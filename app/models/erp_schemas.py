@@ -57,7 +57,6 @@ class ProductResponse(BaseModel):
     price: float
     unit: str
     available: bool
-    has_variants: bool
     has_image: bool = False
     low_stock_threshold: int
     tags: list[str] = Field(default_factory=list)
@@ -66,32 +65,10 @@ class ProductResponse(BaseModel):
     image_analysis_ok: bool | None = None
 
 
-class VariantCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=120)
-    barcode: str | None = None
-    sku: str | None = None
-    cost_price: float | None = Field(default=None, ge=0)
-    sale_price: float | None = Field(default=None, ge=0)
-    is_active: bool = True
-
-
-class VariantResponse(BaseModel):
-    id: str
-    product_id: str
-    name: str
-    barcode: str | None = None
-    sku: str | None = None
-    cost_price: float | None = None
-    sale_price: float | None = None
-    is_active: bool
-
-
 # --- Inventory ---------------------------------------------------------------
 class InventoryRow(BaseModel):
     product_id: str
     product_name: str
-    variant_id: str | None = None
-    variant_name: str | None = None
     category: str | None = None
     unit: str
     quantity: float
@@ -100,7 +77,6 @@ class InventoryRow(BaseModel):
 
 class AdjustmentRequest(BaseModel):
     product_id: str
-    variant_id: str | None = None
     # Either set an absolute target quantity, or a signed delta. Note (reason) required.
     new_quantity: float | None = Field(default=None, ge=0)
     delta: float | None = None
@@ -111,7 +87,6 @@ class MovementResponse(BaseModel):
     id: str
     product_id: str
     product_name: str | None = None
-    variant_id: str | None = None
     type: MovementType
     quantity: float
     unit_cost: float | None = None
@@ -173,7 +148,6 @@ class ClientDetailResponse(ClientResponse):
 # --- Sales -------------------------------------------------------------------
 class SaleItemInput(BaseModel):
     product_id: str
-    variant_id: str | None = None
     quantity: float = Field(gt=0)
     unit_price: float | None = Field(default=None, ge=0)  # omitted -> catalog price
 
@@ -190,7 +164,6 @@ class CreateSaleRequest(BaseModel):
 class SaleItemResponse(BaseModel):
     id: str
     product_id: str
-    variant_id: str | None = None
     product_name: str
     quantity: float
     unit_price: float

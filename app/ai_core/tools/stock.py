@@ -45,7 +45,7 @@ async def update_stock(
         raise PermissionError("update_stock requires admin role")
 
     result = await InventoryService().adjust(
-        _erp_ctx(ctx), product_id=product_id, variant_id=None,
+        _erp_ctx(ctx), product_id=product_id,
         new_quantity=quantity, delta=None, note="Ajuste vía agente IA (update_stock)",
     )
     return StockResult(product_id=product_id, quantity=result["quantity"])

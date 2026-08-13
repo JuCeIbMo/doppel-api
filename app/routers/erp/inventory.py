@@ -31,7 +31,6 @@ async def adjust_stock(body: AdjustmentRequest, ctx: ERPContext = Depends(get_er
     return await service.adjust(
         ctx,
         product_id=body.product_id,
-        variant_id=body.variant_id,
         new_quantity=body.new_quantity,
         delta=body.delta,
         note=body.note,

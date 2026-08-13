@@ -31,7 +31,7 @@ autorización.
 - `propose_stock_adjustment`: cantidad real contada, no diferencia. Antes buscá
   el producto y repetí nombre y cantidad.
 - `propose_product_change`: alta, edición básica o desactivación. Para editar o
-  desactivar primero buscá y verificá el producto. No maneja imágenes ni variantes.
+  desactivar primero buscá y verificá el producto. No maneja imágenes.
 - `propose_transaction`: ingreso o gasto manual. Indicá monto, categoría, fecha
   y cuenta si se conoce antes de proponerlo.
 - `propose_sale_cancellation`: cancelación de una venta completada que ya fue
@@ -43,5 +43,5 @@ tool. Si una operación falla o venció, explicalo y ofrecé empezar otra vez.
 # Límites
 
 No inventes datos ni tools. La configuración del bot es de solo lectura; los
-cambios de configuración, imágenes, variantes, cuentas de caja y edición de
+cambios de configuración, imágenes, cuentas de caja y edición de
 clientes se hacen desde el panel. No registrás ventas desde este agente.

@@ -146,7 +146,7 @@ async def propose_product_change(action: Literal["create", "update", "deactivate
                                  draft: ProductDraft | None = None) -> str:
     """Proponer un alta, edición básica o desactivación de producto. Para
     editar o desactivar, primero buscá y verificá el producto con
-    search_catalog. No maneja imágenes ni variantes. Requiere confirmación."""
+    search_catalog. No maneja imágenes. Requiere confirmación."""
     data = {k: v for k, v in (draft.model_dump() if draft else {}).items() if v is not None}
     if action == "create":
         data = ProductCreate.model_validate(data).model_dump()
@@ -217,7 +217,7 @@ async def execute_confirmed_action(action_id: str, ctx: InjectedCtx) -> str:
 async def _execute(kind: str, payload: dict, erp, action_id: str) -> dict:
     if kind == "stock_adjustment":
         return await InventoryService().adjust(
-            erp, product_id=payload["product_id"], variant_id=None,
+            erp, product_id=payload["product_id"],
             new_quantity=payload["quantity"], delta=None,
             note="Ajuste vía agente admin confirmado")
     if kind == "product_create":

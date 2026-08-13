@@ -6,7 +6,7 @@ together or not at all). That covers the ported project's "no overselling"
 guarantee natively.
 
 Retries are deduped by an `idempotency_key` derived here and enforced by the RPC
-(`migration_v10_sale_idempotency.sql`: unique index on `sales(tenant_id,
+(`schema_erp.sql`: unique index on `sales(tenant_id,
 idempotency_key)` plus an advisory lock, so the check and the insert share one
 transaction). The guarantee deliberately lives in Postgres and not in an
 in-process cache, which would not survive a restart nor work across workers.

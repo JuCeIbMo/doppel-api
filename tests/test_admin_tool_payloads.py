@@ -104,7 +104,7 @@ def test_every_admin_tool_has_a_declared_budget():
 def _fat_low_stock(n=30):
     return [
         {"product_id": f"{UUID[:-2]}{i:02d}", "product_name": f"Producto {i}", "quantity": 1,
-         "low_stock_threshold": 5, "unit": "unidad", "variant_id": None, "category": "Bebidas",
+         "low_stock_threshold": 5, "unit": "unidad", "category": "Bebidas",
          "tenant_id": "tenant-1"}
         for i in range(n)
     ]
@@ -112,7 +112,7 @@ def _fat_low_stock(n=30):
 
 def _fat_movements(n):
     return [
-        {"id": f"m{i}", "product_id": "p1", "variant_id": None, "type": "sale", "quantity": 2,
+        {"id": f"m{i}", "product_id": "p1", "type": "sale", "quantity": 2,
          "unit_cost": None, "reference_id": None, "notes": None, "actor": "admin_bot",
          "created_at": FAT_TIMESTAMP, "product_name": "Cerveza Paceña"}
         for i in range(n)
@@ -141,7 +141,7 @@ def _fat_sales(n):
 
 def _fat_sale_items(n):
     return [
-        {"id": f"si{i}", "tenant_id": "tenant-1", "sale_id": "s1", "product_id": f"p{i}", "variant_id": None,
+        {"id": f"si{i}", "tenant_id": "tenant-1", "sale_id": "s1", "product_id": f"p{i}",
          "product_name": f"Producto {i}", "quantity": 2, "unit_price": 10.0, "unit_cost": None, "total": 20.0}
         for i in range(n)
     ]
@@ -334,7 +334,7 @@ def test_execute_confirmed_action_payload(monkeypatch):
         return {"id": action_id, "status": "confirmed", "kind": "stock_adjustment",
                 "payload": {"product_id": "p1", "quantity": 22, "product_name": "Cerveza Paceña"}}
 
-    async def adjust(self, ctx, *, product_id, variant_id, new_quantity, delta, note):
+    async def adjust(self, ctx, *, product_id, new_quantity, delta, note):
         return {"ok": True, "product_id": product_id, "quantity": new_quantity, "movement": None}
 
     async def complete(self, action_id, result):
