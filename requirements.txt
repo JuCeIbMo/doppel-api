@@ -14,6 +14,11 @@ Pillow>=12.2.0
 # AI core (LangChain + LangGraph in-process, DeepSeek como proveedor del LLM)
 langchain>=1.3,<2
 langgraph>=1.2,<2
+# Harness del agente admin (planning + memoria de largo plazo sobre el Store).
+# Pinneado a <0.8 a propósito: `create_deep_agent` NO incluye `TodoListMiddleware` y
+# `MemoryMiddleware` cachea la memoria en el state; ambas cosas se compensan en
+# `app/ai_core/admin/agent.py` y son exactamente lo que puede cambiar en un minor.
+deepagents>=0.7.5,<0.8
 langchain-deepseek>=1.1,<2
 langgraph-checkpoint-postgres>=2.0
 redis>=5.2.1,<7

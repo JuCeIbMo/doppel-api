@@ -50,3 +50,9 @@ class TurnRuntime:
     """
 
     outbox: TurnOutbox = field(default_factory=TurnOutbox)
+    # Tenant de ESTE turno, resuelto por el servidor a partir del `phone_number_id`
+    # verificado por Meta. Nunca sale del texto del mensaje ni del estado del grafo.
+    # El `StoreBackend` del agente admin lo usa para verificar que el namespace de
+    # memoria que quedó soldado al agente en build time es el del turno en curso
+    # (`app/ai_core/admin/agent.py`).
+    tenant_id: str = ""

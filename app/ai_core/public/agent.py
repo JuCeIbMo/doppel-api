@@ -178,7 +178,7 @@ async def run_public_agent_turn(
     message_id = str(uuid.uuid4())
     # One per invocation: this is what keeps the channel actions of two
     # concurrent conversations apart. See `channel/outbox.py`.
-    turn_runtime = TurnRuntime()
+    turn_runtime = TurnRuntime(tenant_id=tenant.tenant_id)
     start = time.time()
     run_name = "public-support-turn"
     with trace_attributes(

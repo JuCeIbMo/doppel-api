@@ -78,7 +78,37 @@ entrega al modelo un coroutine sin ejecutar, en silencio.
 
 El rol lo resuelve `resolve_role(user_phone, tenant)` por el número del remitente (verificado por Meta), nunca por el texto del mensaje:
 - `public` (`app/ai_core/public/`) → un router LLM clasifica **cada turno** y despacha a un especialista (greeter/catalog/objection/closer) + `create_order`. Grafo único `START → classify_intent → route_dispatch → <especialista> → END`: sin routing pegajoso y **sin handoffs entre especialistas** (un especialista no puede saltar a otro; si tiene que cambiar, lo decide el router del turno siguiente). El `active_agent` del turno anterior sesga la clasificación hacia la continuidad, no la fuerza. Ver `docs/ai-core-pendientes.md`.
-- `admin` (`app/ai_core/admin/`) → agente independiente. `tools.py` es el inventario explícito donde se agregan sus capacidades ERP; `prompt.md` es su contrato. `app/services/admin_view.py` es al admin lo que `storefront.py` al público: shapes lean con listas ya acotadas y el sobrante contado. La diferencia es la salida: **las tools admin devuelven texto compacto** (`app/ai_core/tools/render.py` es la gramática de renderizado), no JSON — el dueño las lee por WhatsApp, no un cliente HTTP. `search_catalog`, `check_stock` y `get_config` son la excepción, porque son contrato compartido con el agente público: siguen devolviendo shapes estructurados. Ver `app/ai_core/admin/README.md` para el flujo de agregar una capacidad nueva.
+- `admin` (`app/ai_core/admin/`) → agente independiente, **el único que corre sobre `create_deep_agent` (deepagents) en vez de `create_agent`**; ver "Harness del agente admin" más abajo. `tools.py` es el inventario explícito donde se agregan sus capacidades ERP; `prompt.md` es su contrato. `app/services/admin_view.py` es al admin lo que `storefront.py` al público: shapes lean con listas ya acotadas y el sobrante contado. La diferencia es la salida: **las tools admin devuelven texto compacto** (`app/ai_core/tools/render.py` es la gramática de renderizado), no JSON — el dueño las lee por WhatsApp, no un cliente HTTP. `search_catalog`, `check_stock` y `get_config` son la excepción, porque son contrato compartido con el agente público: siguen devolviendo shapes estructurados. Ver `app/ai_core/admin/README.md` para el flujo de agregar una capacidad nueva.
+
+### Harness del agente admin (deepagents)
+
+`build_admin_agent` usa `create_deep_agent` para que el agente del dueño planifique y
+recuerde. El agente público **no** lo usa. Cuatro cosas no obvias que sostienen esto:
+
+- **`create_deep_agent` no trae `write_todos`.** `TodoListMiddleware` es de langchain y se
+  pasa a mano en `middleware=`. La doc oficial y el paquete coinciden: no está en el stack
+  default. Como planificar gasta llamadas, el admin usa `MAX_TOOL_CALLS_PER_RUN_ADMIN` (20)
+  en vez del límite del público (5).
+- **La memoria se lee, no se inyecta.** `/memories/AGENTS.md` vive en el LangGraph Store
+  (`app/ai_core/persistence/store.py`, mismo Postgres y mismo pool que el checkpointer) y el
+  prompt le dice al agente que lo lea con `read_file`. Existe `MemoryMiddleware` para
+  inyectarlo al system prompt, pero cachea el contenido en el state
+  (`if "memory_contents" in state: return None`) y ese campo se checkpointea: con un
+  `thread_id` permanente por teléfono, la memoria quedaría congelada en la del primer turno.
+- **El aislamiento entre tenants es el `namespace` del `StoreBackend`, no el prompt.** Cada
+  operación resuelve `(tenant_id, "admin", "memories")` con un callable capturado en build
+  time; el modelo sólo controla la key de adentro. Un `../` se rutea por prefijo y queda como
+  key literal en el mismo namespace, así que no hay escape posible.
+  `tests/test_admin_deep_agent.py` prueba la fuga directa y la traversal.
+- **El inventario de tools es cerrado y fail-closed.** `ToolGuardrailMiddleware` rechaza todo
+  lo que no esté en el allow-list del tenant, así que las tools del harness van declaradas en
+  `HARNESS_TOOLS` (`config/tenant.py`) y sólo se suman para el rol admin. `task`, `execute`,
+  `glob`, `grep` y `delete` no se registran: `agent.py` acota `tools=` del
+  `FilesystemMiddleware` y apaga el subagente general-purpose con un harness profile.
+  ⚠️ `register_harness_profile` es un registry **global de proceso** keyeado por proveedor,
+  no config por agente: si el agente público migra a deepagents, hereda ese profile.
+
+Ver `app/ai_core/admin/README.md` para el detalle y `docs` de deepagents para la API.
 
 ### Herramienta de imagen de producto (Gemini, separada del bot)
 
@@ -154,7 +184,7 @@ los de una plantilla de Meta.
 |----------|--------|
 | `LOG_LEVEL=DEBUG` | Activa todos los `logger.debug(...)` del código doppel-api (bridge, webhook, erp) |
 | `AI_CORE_URL` | Cualquier valor no vacío activa el bot; vacío lo desactiva sin tocar código |
-| `CHAT_DB_URL` | Postgres del checkpointer de LangGraph. Requerido: sin él el agente no arranca |
+| `CHAT_DB_URL` | Postgres del checkpointer **y del Store** de LangGraph (memoria del agente admin). Requerido: sin él el agente no arranca |
 | `REDIS_URL` | Redis del debounce distribuido. Vacío = procesa cada mensaje inmediatamente |
 | `MESSAGE_DEBOUNCE_SECONDS` | Ventana desde el último mensaje antes de invocar al agente (default: 2; 0 = desactivado) |
 | `DEEPSEEK_API_KEY` | Requerida por el bot; sin ella no se puede construir ningún chat model |

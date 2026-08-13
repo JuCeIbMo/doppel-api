@@ -33,6 +33,18 @@ ALL_ADMIN_TOOLS = (
     "propose_sale_cancellation", "create_product_from_photo",
 )
 
+# Tools que NO salen de `ADMIN_TOOLS` sino que las inyecta el middleware del harness
+# (deepagents/langchain) en `build_admin_agent`. Van declaradas a mano a propósito:
+# `ToolGuardrailMiddleware` es fail-closed, así que si un upgrade de deepagents suma una
+# built-in nueva, se rechaza ruidoso en vez de aparecer sola en el inventario del dueño.
+# `task`, `glob`, `grep`, `delete` y `execute` NO están acá y tampoco se registran:
+# `build_admin_agent` acota la lista de tools del `FilesystemMiddleware` y desactiva el
+# subagente general-purpose. `tests/test_admin_deep_agent.py` fija el inventario exacto.
+HARNESS_TOOLS = frozenset({
+    "write_todos",                                   # TodoListMiddleware (langchain)
+    "ls", "read_file", "write_file", "edit_file",    # FilesystemMiddleware (deepagents)
+})
+
 
 class PublicAgentConfig(BaseModel):
     tone: str = "friendly"

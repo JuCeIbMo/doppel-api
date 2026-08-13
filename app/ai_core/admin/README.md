@@ -7,6 +7,39 @@ router ni con los especialistas públicos.
 - `tools.py`: inventario explícito de capacidades habilitadas.
 - `prompt.md`: contrato de comportamiento y herramientas visibles para el modelo.
 
+## Corre sobre deepagents, no sobre `create_agent`
+
+A diferencia de los especialistas públicos, este agente se construye con
+`create_deep_agent`. Eso le suma dos cosas y hay que saber qué asume cada una.
+
+**Planificación (`write_todos`).** `create_deep_agent` **no** la trae — `TodoListMiddleware`
+es de langchain y `agent.py` la pasa a mano. Sirve para que un pedido abierto ("¿por qué
+bajaron las ventas?") encadene varias lecturas en un turno sin que esa combinación esté
+anticipada como una tool. Por eso el admin tiene `MAX_TOOL_CALLS_PER_RUN_ADMIN` (20) en vez
+del límite del público (5).
+
+**Memoria en `/memories/`.** Un filesystem virtual con dos rutas: `/memories/` va al
+LangGraph Store (persistente entre conversaciones), todo lo demás al state del grafo. Las
+`permissions` de `agent.py` sólo permiten escribir dentro de `/memories/`, porque el
+`StateBackend` se serializa entero en cada checkpoint de un thread que no termina nunca.
+
+El agente **lee** su memoria con `read_file`, no se le inyecta al prompt. Existe
+`MemoryMiddleware` para inyectarla, pero cachea el contenido en el state del grafo
+(`if "memory_contents" in state: return None`) y ese campo se checkpointea: con un
+`thread_id` permanente por número de teléfono, la memoria quedaría congelada en la del
+primer turno. El costo de leerla es una tool call por turno.
+
+**Aislamiento entre tenants.** Es el `namespace` del `StoreBackend`, no la buena conducta
+del modelo. La tupla `(tenant_id, "admin", "memories")` se captura en `build_admin_agent` y
+el modelo sólo controla la key de adentro, así que ni un prompt injection ni un `../` pueden
+cambiar de tenant. `tests/test_admin_deep_agent.py` prueba las dos fugas.
+
+**El inventario de tools es cerrado.** `ToolGuardrailMiddleware` es fail-closed, así que las
+tools del harness van declaradas en `HARNESS_TOOLS` (`config/tenant.py`). `task`, `execute`,
+`glob`, `grep` y `delete` no se registran: `agent.py` acota la lista del `FilesystemMiddleware`
+y desactiva el subagente general-purpose vía harness profile. Si un upgrade de deepagents
+cambia esos defaults, `test_admin_deep_agent.py` rompe en vez de ampliar la superficie sola.
+
 Las consultas de negocio reutilizan los services ERP existentes. Las escrituras no se
 exponen directamente: se proponen como una acción persistente y el dueño debe tocar
 Confirmar en WhatsApp. El bridge valida ese tap y sólo ese turno puede ejecutar la

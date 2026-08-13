@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from app.ai_core.admin.tools import ADMIN_TOOLS
+from app.ai_core.config.tenant import HARNESS_TOOLS
 from app.ai_core.public.specialists import PUBLIC_SPECIALIST_TOOLS
 
 PUBLIC_PROMPTS_DIR = Path("app/ai_core/public/prompts")
@@ -45,7 +46,12 @@ def _tools_named_in(text: str) -> set[str]:
 
 def _available_to(agent: str) -> set[str]:
     if agent == "admin_agent":
-        return {tool.name for tool in ADMIN_TOOLS}
+        # El admin corre sobre deepagents, así que además de `ADMIN_TOOLS` tiene las
+        # inyectadas por el harness (`write_todos` y las de filesystem). El prompt las
+        # nombra al explicar planificación y memoria.
+        # `tests/test_admin_deep_agent.py` verifica que el agente real registre
+        # exactamente esta unión.
+        return {tool.name for tool in ADMIN_TOOLS} | set(HARNESS_TOOLS)
     # Specialists bind business tools only: there is no handoff between them.
     return _PUBLIC_BUSINESS_TOOLS[agent]
 

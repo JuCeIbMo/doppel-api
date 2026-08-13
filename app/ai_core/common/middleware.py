@@ -4,12 +4,16 @@ import re
 from langchain.agents.middleware import AgentMiddleware, ToolCallLimitMiddleware, ToolCallRequest
 from langchain_core.messages import ToolMessage, trim_messages
 
-from app.ai_core.config.tenant import TenantConfig
+from app.ai_core.config.tenant import HARNESS_TOOLS, TenantConfig
 from app.ai_core.tools.context import ToolContext
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_CALLS_PER_RUN = 5
+# El admin planifica: un pedido abierto ("¿por qué bajaron las ventas?") gasta un
+# `write_todos`, varias lecturas encadenadas y quizá un `write_file` a memoria. Con el
+# límite del público (5) el agente se queda sin llamadas antes de terminar de mirar.
+MAX_TOOL_CALLS_PER_RUN_ADMIN = 20
 MAX_CATALOG_SEARCHES_PER_RUN = 3
 
 
@@ -141,7 +145,15 @@ def build_message_window(max_messages: int = 40) -> MessageWindowMiddleware:
 
 
 class ToolGuardrailMiddleware(AgentMiddleware):
-    """Reject tool calls outside the allow-list for the active role."""
+    """Reject tool calls outside the allow-list for the active role.
+
+    For tools passed in `tools=` this duplicates what `allowed_tools_for` already did at
+    build time. Its non-redundant job is policing tools injected by *middleware*, which never
+    pass through `ADMIN_TOOLS` nor the tenant allow-list — that is what the admin agent's
+    deepagents harness adds (see `HARNESS_TOOLS`). Keeping it fail-closed means a future
+    deepagents upgrade that ships a new built-in gets rejected loudly instead of quietly
+    widening what the business owner can reach.
+    """
 
     tools = ()
 
@@ -151,6 +163,11 @@ class ToolGuardrailMiddleware(AgentMiddleware):
             if role == "public"
             else tenant.admin_agent.allowed_tools
         )
+        # Only the admin agent runs on the deepagents harness. The public agent binds none of
+        # these, so leaving it strictly fail-closed costs nothing and keeps the surface where
+        # customers talk to the bot as narrow as it is today.
+        if role == "admin":
+            self.allowed |= HARNESS_TOOLS
         self.role = role
 
     def _rejection(self, request: ToolCallRequest) -> ToolMessage | None:
@@ -231,9 +248,12 @@ def sanitize_user_input(text: str, max_chars: int = MAX_USER_MESSAGE_CHARS) -> s
 
 def specialist_middleware(tenant: TenantConfig, role: str) -> list:
     """Shared async middleware stack for every specialist and the admin agent."""
+    run_limit = (
+        MAX_TOOL_CALLS_PER_RUN_ADMIN if role == "admin" else MAX_TOOL_CALLS_PER_RUN
+    )
     return [
         ToolCallLimitMiddleware(
-            run_limit=MAX_TOOL_CALLS_PER_RUN,
+            run_limit=run_limit,
             exit_behavior="continue",
         ),
         ToolCallLimitMiddleware(
