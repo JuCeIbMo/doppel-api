@@ -49,7 +49,7 @@ def get_handler():
 
 def invocation_config(
     thread_id: str, run_name: str, turn_id: str | None = None,
-    confirmed_action_id: str | None = None,
+    confirmed_action_id: str | None = None, images: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Build the LangGraph config and attach Langfuse when configured.
 
@@ -58,10 +58,15 @@ def invocation_config(
     hand it to the tools: `create_order` derives its idempotency key from it, so
     a retry inside one turn dedupes while the same order placed again in a later
     message is a genuinely new sale.
+
+    ``images`` are the local paths (+ mime types) of any images attached to this
+    turn's WhatsApp message. Serializable (plain strings), so — like ``turn_id`` —
+    it can live in ``configurable`` without breaking the checkpoint.
     """
     config: dict[str, Any] = {
         "configurable": {"thread_id": thread_id, "turn_id": turn_id or "",
-                         "confirmed_action_id": confirmed_action_id or ""},
+                         "confirmed_action_id": confirmed_action_id or "",
+                         "images": images or []},
         "recursion_limit": GRAPH_RECURSION_LIMIT,
         "run_name": run_name,
     }

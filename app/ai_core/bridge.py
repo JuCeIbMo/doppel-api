@@ -222,9 +222,18 @@ async def respond(
                 confirmed_action_id = await _consume_admin_confirmation(
                     tenant, thread_id, interactive_reply
                 )
+                # Sólo el camino admin necesita los bytes de la foto (alta de
+                # producto); el público no da de alta productos, así que no
+                # agrandamos su `configurable` sin motivo.
+                images = [
+                    {"path": m["local_path"],
+                     "mime_type": m.get("downloaded_mime_type") or m.get("mime_type")}
+                    for m in (media or [])
+                    if m.get("type") == "image" and m.get("local_path")
+                ]
                 result = await run_turn(
                     agent, tenant, thread_id, text, message_id,
-                    confirmed_action_id=confirmed_action_id,
+                    confirmed_action_id=confirmed_action_id, images=images,
                 )
             else:
                 result = await run_turn(agent, tenant, thread_id, text, message_id)

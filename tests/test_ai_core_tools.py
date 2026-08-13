@@ -33,9 +33,9 @@ from app.ai_core.common.middleware import (
 from app.ai_core.channel.outbox import TurnOutbox
 from app.ai_core.config.tenant import AdminAgentConfig, PublicAgentConfig, TenantConfig
 from app.ai_core.tools import (
-    add_product,
     check_stock,
     create_order,
+    create_product_from_photo,
     human_handoff,
     search_catalog,
     get_config,
@@ -61,7 +61,7 @@ from app.ai_core.tools.context import ToolContext
 
 ALL_TOOLS = [
     search_catalog, check_stock, create_order,
-    update_stock, add_product, human_handoff, get_config,
+    update_stock, create_product_from_photo, human_handoff, get_config,
     send_image, send_reply_buttons, send_list_message,
     get_business_overview, get_sales_analysis, get_inventory_alerts,
     find_customers, list_recent_sales, get_cash_summary,

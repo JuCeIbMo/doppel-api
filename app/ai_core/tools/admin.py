@@ -144,9 +144,10 @@ async def propose_stock_adjustment(product_id: str, quantity: Annotated[float, F
 async def propose_product_change(action: Literal["create", "update", "deactivate"],
                                  ctx: InjectedCtx, product_id: str | None = None,
                                  draft: ProductDraft | None = None) -> str:
-    """Proponer un alta, edición básica o desactivación de producto. Para
-    editar o desactivar, primero buscá y verificá el producto con
-    search_catalog. No maneja imágenes. Requiere confirmación."""
+    """Proponer una edición básica o desactivación de producto (el alta con
+    foto usa create_product_from_photo, no esta tool). Para editar o
+    desactivar, primero buscá y verificá el producto con search_catalog.
+    Requiere confirmación."""
     data = {k: v for k, v in (draft.model_dump() if draft else {}).items() if v is not None}
     if action == "create":
         data = ProductCreate.model_validate(data).model_dump()

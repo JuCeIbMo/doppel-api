@@ -191,6 +191,14 @@ def cash_summary(data: dict) -> str:
     )
 
 
+def product_created(data: dict) -> str:
+    parts = ["Producto creado", data["name"], money(data.get("price"))]
+    if data.get("stock") is not None:
+        parts.append(f"stock {qty(data['stock'])}")
+    parts.append("con foto" if data.get("has_image") else "sin foto")
+    return row(*parts)
+
+
 def propose(description: str) -> str:
     return f"Propuesta pendiente: {description}. Botones enviados; esperá que el dueño toque Confirmar."
 

@@ -67,6 +67,7 @@ BUDGET = {
     "propose_transaction": 200,
     "propose_sale_cancellation": 200,
     "execute_confirmed_action": 250,
+    "create_product_from_photo": 200,
 }
 
 # Tools shared with the public agent stay structured (JSON), by design — see

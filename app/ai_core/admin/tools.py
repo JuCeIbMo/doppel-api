@@ -6,6 +6,7 @@ the registry beside the agent makes its current surface visible in one place.
 
 from app.ai_core.tools import (
     check_stock,
+    create_product_from_photo,
     execute_confirmed_action,
     find_customers,
     get_business_overview,
@@ -40,4 +41,5 @@ ADMIN_TOOLS = [
     propose_transaction,
     propose_sale_cancellation,
     execute_confirmed_action,
+    create_product_from_photo,
 ]

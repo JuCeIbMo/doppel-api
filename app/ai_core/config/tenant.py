@@ -30,7 +30,7 @@ ALL_ADMIN_TOOLS = (
     "find_customers", "get_customer_details", "list_recent_sales", "get_sale_details",
     "get_cash_summary", "propose_stock_adjustment",
     "propose_product_change", "propose_transaction", "execute_confirmed_action",
-    "propose_sale_cancellation",
+    "propose_sale_cancellation", "create_product_from_photo",
 )
 
 

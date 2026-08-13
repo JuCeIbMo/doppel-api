@@ -1,5 +1,5 @@
 import inspect
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from langchain.tools import tool
@@ -27,6 +27,11 @@ class ToolContext:
     # graph finishes. ``None`` when the graph was invoked without a `TurnRuntime`
     # (tests, CLI): the channel tools degrade to a no-op instead of raising.
     outbox: TurnOutbox | None = None
+    # Local paths of the images that arrived with THIS WhatsApp message. Valid
+    # only for the duration of the turn: `cleanup_media_files` deletes them in
+    # the `finally` of `process_bot_response`. List of dicts with "path" and
+    # "mime_type".
+    images: list[dict] = field(default_factory=list)
 
 
 # `ctx: InjectedCtx` instead of a bare `ctx: ToolContext`: with `InjectedToolArg`,

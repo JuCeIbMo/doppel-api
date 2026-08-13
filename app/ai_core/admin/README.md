@@ -29,6 +29,15 @@ un cliente HTTP. Una capacidad nueva de lectura sigue estos 5 pasos:
 `search_catalog`, `check_stock` y `get_config` son la excepción: contrato compartido
 con el agente público, siguen devolviendo shapes estructurados.
 
+Una capacidad de escritura que necesita recibir una imagen del turno (como el alta de
+producto) no pasa por el `configurable` normal: el path local de cada imagen adjunta al
+mensaje de WhatsApp viaja en `ToolContext.images` (ver `app/ai_core/tools/context.py`),
+poblado por `bridge.respond` → `invocation_config(images=...)` →
+`ToolContextMiddleware._inject`. `create_product_from_photo`
+(`app/ai_core/tools/catalog.py`) es el único consumidor hoy; ejecuta directo, sin el
+contrato propose→Confirmar, porque el alta es reversible (`propose_product_change`
+la desactiva) y queda en `activity_log`.
+
 Las escrituras no se exponen directamente: se proponen como una acción persistente y
 el dueño debe tocar Confirmar en WhatsApp. El bridge valida ese tap y sólo ese turno
 puede ejecutar la acción; así texto libre, reintentos y conversaciones ajenas no

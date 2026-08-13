@@ -78,6 +78,7 @@ class ToolContextMiddleware(AgentMiddleware):
         thread_id = configurable.get("thread_id", "")
         turn_id = configurable.get("turn_id", "")
         confirmed_action_id = configurable.get("confirmed_action_id", "")
+        images = configurable.get("images", [])
         # The outbox comes from the run-scoped `context=` instead of `configurable`
         # because it is mutable and per-turn: this middleware lives inside an agent
         # that `bridge` caches across turns and conversations, so anything stored on
@@ -94,6 +95,7 @@ class ToolContextMiddleware(AgentMiddleware):
                 turn_id=turn_id,
                 confirmed_action_id=confirmed_action_id,
                 outbox=getattr(turn_runtime, "outbox", None),
+                images=images,
             ),
         }
         return True, original_args
