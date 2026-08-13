@@ -222,6 +222,14 @@ def test_bot_switch_still_accepts_the_historical_env_names(monkeypatch):
         )
         monkeypatch.delenv(legacy)
 
+def test_every_admin_tool_is_in_the_tenant_allowlist():
+    """A tool outside ALL_ADMIN_TOOLS is rejected by the guardrail at runtime,
+    silently for whoever added it."""
+    from app.ai_core.admin.tools import ADMIN_TOOLS
+    from app.ai_core.config.tenant import ALL_ADMIN_TOOLS
+
+    assert {t.name for t in ADMIN_TOOLS} == set(ALL_ADMIN_TOOLS)
+
 def test_different_threads_still_run_concurrently(monkeypatch):
     """The lock must be per conversation, not a global bottleneck."""
     active = 0
