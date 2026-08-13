@@ -35,10 +35,23 @@ el modelo sólo controla la key de adentro, así que ni un prompt injection ni u
 cambiar de tenant. `tests/test_admin_deep_agent.py` prueba las dos fugas.
 
 **El inventario de tools es cerrado.** `ToolGuardrailMiddleware` es fail-closed, así que las
-tools del harness van declaradas en `HARNESS_TOOLS` (`config/tenant.py`). `task`, `execute`,
-`glob`, `grep` y `delete` no se registran: `agent.py` acota la lista del `FilesystemMiddleware`
-y desactiva el subagente general-purpose vía harness profile. Si un upgrade de deepagents
-cambia esos defaults, `test_admin_deep_agent.py` rompe en vez de ampliar la superficie sola.
+tools del harness van declaradas en `HARNESS_TOOLS` (`config/tenant.py`). `agent.py` acota la
+lista del `FilesystemMiddleware` y desactiva el subagente general-purpose vía harness profile.
+Si un upgrade de deepagents cambia esos defaults, `test_admin_deep_agent.py` rompe en vez de
+ampliar la superficie sola.
+
+Las exclusiones tienen dos razones distintas y conviene no mezclarlas:
+
+| Tool | Por qué no está |
+|---|---|
+| `execute` | Shell. Igual no se registraría: el backend no es un sandbox. |
+| `task` | Subagente genérico con las tools ERP del dueño. |
+| `glob`, `grep` | **No es aislamiento** — resuelven el namespace igual que `read`/`write`. Es que hay un solo archivo de memoria: buscar dentro de él con `read_file` alcanza, y cada tool mete su schema en cada llamada al modelo. |
+| `delete` | Pérdida de datos, no fuga: el modelo podría borrar toda la memoria acumulada. `edit_file` cubre corregir un hecho viejo. |
+
+`test_every_backend_operation_is_namespace_scoped` prueba que `ls`/`grep`/`glob`/`delete`
+están namespaceadas igual que el resto, para que quede claro que su exclusión es una decisión
+de costo y superficie, reversible, y no una garantía de seguridad de la que dependa nada.
 
 Las consultas de negocio reutilizan los services ERP existentes. Las escrituras no se
 exponen directamente: se proponen como una acción persistente y el dueño debe tocar

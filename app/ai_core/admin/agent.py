@@ -126,6 +126,28 @@ def _namespace_factory(tenant_id: str):
     return factory
 
 
+def build_memory_backend(tenant_id: str, store) -> CompositeBackend:
+    """Filesystem virtual del agente admin.
+
+    `/memories/` -> Store (persistente entre conversaciones, namespaceado por tenant).
+    Todo lo demás -> state del grafo (efímero por thread), aunque `_MEMORY_PERMISSIONS`
+    lo deja de sólo lectura para que nada engorde el checkpoint.
+
+    Separado de `build_admin_agent` para que los tests puedan ejercitar el backend real
+    —incluidas las operaciones que el agente no expone como tools— sin tener que
+    reconstruirlo a mano ni hurgar en el grafo compilado.
+    """
+    return CompositeBackend(
+        default=StateBackend(),
+        routes={
+            MEMORY_ROUTE: StoreBackend(
+                store=store,
+                namespace=_namespace_factory(tenant_id),
+            ),
+        },
+    )
+
+
 async def build_admin_agent(tenant: TenantConfig):
     system_prompt = load_prompt(tenant, "admin", "admin_agent")
     tools = allowed_tools_for(tenant, "admin", ADMIN_TOOLS)
@@ -133,17 +155,7 @@ async def build_admin_agent(tenant: TenantConfig):
     checkpointer = await open_checkpointer()
     store = await open_store()
 
-    # `/memories/` -> Store (persistente, namespaceado por tenant). Todo lo demás -> state
-    # del grafo (efímero por thread), aunque `_MEMORY_PERMISSIONS` lo deja de sólo lectura.
-    backend = CompositeBackend(
-        default=StateBackend(),
-        routes={
-            MEMORY_ROUTE: StoreBackend(
-                store=store,
-                namespace=_namespace_factory(tenant.tenant_id),
-            ),
-        },
-    )
+    backend = build_memory_backend(tenant.tenant_id, store)
 
     agent = create_deep_agent(
         name="admin_agent",

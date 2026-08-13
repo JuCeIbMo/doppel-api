@@ -158,11 +158,25 @@ def test_tool_inventory_is_exactly_business_plus_harness(build):
     assert registered == expected
 
 
-@pytest.mark.parametrize("forbidden", ["task", "execute", "glob", "grep", "delete"])
+@pytest.mark.parametrize("forbidden", ["task", "execute"])
 def test_dangerous_builtins_are_not_registered(build, forbidden):
-    """`execute` es shell; `task` expone las tools ERP del dueño a un subagente genérico."""
+    """Superficie de ataque real: `execute` es shell y `task` le da las tools ERP del
+    dueño a un subagente genérico."""
     agent = build(TENANT_A)
     assert forbidden not in agent.nodes["tools"].bound._tools_by_name
+
+
+@pytest.mark.parametrize("excluded", ["glob", "grep", "delete"])
+def test_low_value_builtins_are_not_registered(build, excluded):
+    """Estas NO se excluyen por aislamiento — ver el test de abajo, que prueba que serían
+    igual de seguras. Se excluyen porque no aportan: hay un único archivo de memoria, así
+    que `glob`/`grep` sólo gastan tokens de schema en cada llamada al modelo, y `delete`
+    deja que el modelo borre de un saque toda la memoria acumulada del dueño (pérdida de
+    datos, no fuga). `edit_file` cubre corregir un hecho viejo, que es lo único que el
+    prompt pide.
+    """
+    agent = build(TENANT_A)
+    assert excluded not in agent.nodes["tools"].bound._tools_by_name
 
 
 def test_admin_gets_a_higher_tool_call_budget_than_public():
@@ -262,6 +276,28 @@ def test_namespace_factory_refuses_a_turn_from_another_tenant():
 
     with pytest.raises(RuntimeError, match="namespace mismatch"):
         factory(_FakeRuntime(TurnRuntime(tenant_id="moda-maria")))
+
+
+def test_every_backend_operation_is_namespace_scoped(build, store):
+    """El aislamiento no depende de qué tools expongamos: es el `namespace`.
+
+    `ls`/`grep`/`glob`/`delete` resuelven la tupla por el mismo `_get_namespace()` que
+    `read`/`write`, así que serían tan seguras como las que sí exponemos. Se prueba acá,
+    a nivel de backend, porque el agente no las registra: si algún día se re-habilita
+    alguna, este test ya dice qué garantía tiene que seguir valiendo — y si deepagents
+    alguna vez rompe el scoping de una de ellas, rompe acá.
+    """
+    _write_secret(build, TENANT_A)
+    # El mismo constructor que usa `build_admin_agent`, no una réplica del test.
+    backend = admin_agent.build_memory_backend(TENANT_B.tenant_id, store)
+
+    assert backend.ls("/memories/").entries == []
+    assert backend.grep("proveedor", path="/memories/").matches == []
+    assert backend.glob("**/*.md", path="/memories/").matches == []
+    assert backend.delete(MEMORY_FILE).error is not None
+
+    # Y el archivo del otro tenant sigue intacto después del intento de borrado.
+    assert store.search(memory_namespace(TENANT_A.tenant_id))[0].value["content"] == SECRET
 
 
 def test_writing_outside_memories_is_denied(build, store):

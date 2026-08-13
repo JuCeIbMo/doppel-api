@@ -102,9 +102,17 @@ recuerde. El agente público **no** lo usa. Cuatro cosas no obvias que sostienen
   `tests/test_admin_deep_agent.py` prueba la fuga directa y la traversal.
 - **El inventario de tools es cerrado y fail-closed.** `ToolGuardrailMiddleware` rechaza todo
   lo que no esté en el allow-list del tenant, así que las tools del harness van declaradas en
-  `HARNESS_TOOLS` (`config/tenant.py`) y sólo se suman para el rol admin. `task`, `execute`,
-  `glob`, `grep` y `delete` no se registran: `agent.py` acota `tools=` del
-  `FilesystemMiddleware` y apaga el subagente general-purpose con un harness profile.
+  `HARNESS_TOOLS` (`config/tenant.py`) y sólo se suman para el rol admin. `agent.py` acota
+  `tools=` del `FilesystemMiddleware` y apaga el subagente general-purpose con un harness
+  profile, por dos motivos que **no** hay que confundir:
+  - `task` y `execute` son superficie de ataque: shell y un subagente genérico con las tools
+    ERP del dueño.
+  - `glob`, `grep` y `delete` **no** se excluyen por aislamiento — resuelven el namespace
+    igual que `read`/`write` y serían tan seguras como ellas
+    (`test_every_backend_operation_is_namespace_scoped` lo fija). Se excluyen porque hay un
+    único archivo de memoria, así que `glob`/`grep` sólo gastan schema en cada llamada al
+    modelo, y `delete` habilita que el modelo borre toda la memoria del dueño de un saque
+    (pérdida de datos). Re-habilitarlas es una decisión de costo, no de seguridad.
   ⚠️ `register_harness_profile` es un registry **global de proceso** keyeado por proveedor,
   no config por agente: si el agente público migra a deepagents, hereda ese profile.
 
